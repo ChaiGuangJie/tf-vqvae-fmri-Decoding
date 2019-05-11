@@ -4,6 +4,19 @@ import h5py
 import numpy as np
 
 
+class Vim2_Stimuli_Dataset(Dataset):
+    def __init__(self, file, dt_key):
+        f = h5py.File(file, 'r')
+        self.dt = f[dt_key]  # shape = (108000,3,128,128)
+
+    def __getitem__(self, item):
+        data = self.dt[item].transpose((2, 1, 0)) / 255.0
+        return data
+
+    def __len__(self):
+        return self.dt.shape[0]
+
+
 class vqvae_ze_dataset(Dataset):
     def __init__(self, file):
         zef = h5py.File(file, 'r')
@@ -44,15 +57,18 @@ class vqvae_ze_dataset(Dataset):
 #         return self.response.shape[-1]
 
 class fmri_vector_dataset(Dataset):
-    def __init__(self, fmri_file, zq_file, mean, std, fmri_key='rt', frame_idx=0, latent_idx=0, time_step=15):
+    def __init__(self, fmri_file, zq_file, mean, std, fmri_key, frame_idx=0, latent_idx=0, time_step=15):
         fmrif = h5py.File(fmri_file, 'r')
-        self.response = (fmrif[fmri_key][:] - mean) / std  # todo 这样可以？
+        if not mean or not std:
+            self.response = fmrif[fmri_key][:]
+        else:
+            self.response = (fmrif[fmri_key][:] - mean) / std  # todo 这样可以？
         zqf = h5py.File(zq_file, 'r')
-        self.zq = zqf['zq']  # shape=(108000,32,32,128)
+        self.zq = zqf['zq'][frame_idx::time_step]  # shape=(108000,32,32,128)
 
-        self.frame_idx = frame_idx
+        # self.frame_idx = frame_idx
         self.latent_idx = latent_idx
-        self.time_step = time_step
+        # self.time_step = time_step
         self.mean = mean
         self.std = std
 
@@ -61,7 +77,7 @@ class fmri_vector_dataset(Dataset):
         # fmri = np.nan_to_num(fmri)
         # fmri = (fmri - self.mean) / self.std
 
-        vector = self.zq[self.frame_idx + item * self.time_step].reshape(1024, 128)
+        vector = self.zq[item].reshape(1024, 128)
 
         return fmri, vector[self.latent_idx]
 
@@ -72,7 +88,10 @@ class fmri_vector_dataset(Dataset):
 class fmri_dataset(Dataset):
     def __init__(self, fmri_file, mean, std, dt_key):  # todo fmri file 的 mean，std 必须对应同一个被试
         f = h5py.File(fmri_file, 'r')
-        self.resp = (f[dt_key] - mean) / std
+        if not mean or not std:
+            self.resp = f[dt_key][:]
+        else:
+            self.resp = (f[dt_key][:] - mean) / std
 
     def __getitem__(self, item):
         return self.resp[:, item]

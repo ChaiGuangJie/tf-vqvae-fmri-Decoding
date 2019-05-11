@@ -1,6 +1,6 @@
 import h5py
 import tensorflow as tf
-from MyDataset import vqvae_ze_dataset, vqvae_ze_dataset
+from MyDataset import vqvae_ze_dataset, vqvae_ze_dataset, Vim2_Stimuli_Dataset
 from torch.utils.data import DataLoader
 from model import VQVAE, _imagenet_arch
 import numpy as np
@@ -88,7 +88,39 @@ def rec_a_frame_img_from_ze(dt_key):
             print(step)
 
 
+def extract_zq_from_vqvae(dt_key):
+    MODEL, K, D = ('models/imagenet/last.ckpt', 512, 128)
+    with tf.variable_scope('net'):
+        with tf.variable_scope('params') as params:
+            pass
+        x = tf.placeholder(tf.float32, [None, 128, 128, 3])
+        net = VQVAE(None, None, 0.25, x, K, D, _imagenet_arch, params, False)
+
+    init_op = tf.group(tf.global_variables_initializer(),
+                       tf.local_variables_initializer())
+    config = tf.ConfigProto()
+    config.gpu_options.allow_growth = True
+    sess = tf.Session(config=config)
+    sess.graph.finalize()
+    sess.run(init_op)
+    net.load(sess, MODEL)
+
+    dataset = Vim2_Stimuli_Dataset("/data1/home/guangjie/Data/vim-2-gallant/orig/Stimuli.mat", dt_key)
+    dataloader = DataLoader(dataset, batch_size=10, shuffle=False, num_workers=1)
+
+    with h5py.File("/data1/home/guangjie/Data/vim-2-gallant/myOrig/zq_from_vqvae_{}.hdf5".format(dt_key), 'w') as sf:
+        zq_dataset = sf.create_dataset('zq', shape=(len(dataset), 32, 32, 128))
+        begin_idx = 0
+        for step, data in enumerate(dataloader):
+            zq = sess.run(net.z_q, feed_dict={x: data})
+            end_idx = begin_idx + len(zq)
+            zq_dataset[begin_idx:end_idx] = zq
+            begin_idx = end_idx
+            print(step)
+
+
 if __name__ == '__main__':
     # extract_k(file="/data1/home/guangjie/Data/vim-2-gallant/myOrig/ze_embeds_from_vqvae_st.hdf5")
-    # concatenate_ze('rva0')
-    rec_a_frame_img_from_ze('rva0')
+    # concatenate_ze('rv')
+    rec_a_frame_img_from_ze('rv')
+    # extract_zq_from_vqvae('sv')

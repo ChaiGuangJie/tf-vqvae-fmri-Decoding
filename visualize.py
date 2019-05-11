@@ -79,6 +79,6 @@ if __name__ == '__main__':
 
     # testHeatmap(viz)
     # show_z_flow(viz)
-    show_rec_one_frame(viz, 'rva0')
+    show_rec_one_frame(viz, 'rv')
     print('end')
     viz.close()
