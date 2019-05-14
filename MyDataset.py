@@ -43,6 +43,35 @@ class vqvae_zq_dataset(Dataset):
         return self.zq.shape[0] // self.time_step
 
 
+class vqvae_k_dataset(Dataset):
+    def __init__(self, kfile, frame_idx, time_step):
+        kf = h5py.File(kfile, 'r')
+        self.k = kf['k'][frame_idx::time_step].reshape(-1, 1024).astype(np.float32)
+
+    def __getitem__(self, item):
+        return self.k[item]
+
+    def __len__(self):
+        return self.k.shape[0]
+
+
+class fmri_k_dataset(Dataset):
+    def __init__(self, fmri_file, k_file, fmri_key, frame_idx, time_step=15):
+        fmrif = h5py.File(fmri_file, 'r')
+        self.resp = fmrif[fmri_key][:]
+        kf = h5py.File(k_file, 'r')
+        self.k = kf['k'][frame_idx::time_step].reshape(-1, 1024).astype(np.float32)
+        assert self.resp.shape[-1] == self.k.shape[0]
+
+    def __getitem__(self, item):
+        fmri = self.resp[:, item]
+        vector = self.k[item] / 512  # , self.row
+        return fmri, vector
+
+    def __len__(self):
+        return self.resp.shape[-1]
+
+
 # class fmri_vector_dataset(Dataset):
 #     def __init__(self, fmri_file, k_file, embeds, mean, std, fmri_key='rt', frame_idx=0, latent_idx=0, time_step=15):
 #         fmrif = h5py.File(fmri_file, 'r')
@@ -71,14 +100,14 @@ class vqvae_zq_dataset(Dataset):
 #         return self.response.shape[-1]
 
 class fmri_vector_dataset(Dataset):
-    def __init__(self, fmri_file, zq_file, mean, std, fmri_key, frame_idx=0, latent_idx=0, time_step=15):
+    def __init__(self, fmri_file, zq_file, mean, std, fmri_key, latent_key, frame_idx=0, latent_idx=0, time_step=15):
         fmrif = h5py.File(fmri_file, 'r')
         if not mean or not std:
             self.response = fmrif[fmri_key][:]
         else:
             self.response = (fmrif[fmri_key][:] - mean) / std  # todo 这样可以？
         zqf = h5py.File(zq_file, 'r')
-        self.zq = zqf['zq'][frame_idx::time_step]  # shape=(108000,32,32,128)
+        self.zq = zqf[latent_key][frame_idx::time_step]  # shape=(108000,32,32,128)
 
         # self.frame_idx = frame_idx
         self.latent_idx = latent_idx
@@ -94,6 +123,39 @@ class fmri_vector_dataset(Dataset):
         vector = self.zq[item].reshape(1024, 128)
 
         return fmri, vector[self.latent_idx]
+
+    def __len__(self):
+        return self.response.shape[-1]
+
+
+class fmri_vector_k_dataset(Dataset):
+    def __init__(self, fmri_file, vector_file, k_file, mean, std, fmri_key, latent_key, frame_idx=0, latent_idx=0,
+                 time_step=15):
+        fmrif = h5py.File(fmri_file, 'r')
+        if not mean or not std:
+            self.response = fmrif[fmri_key][:]
+        else:
+            self.response = (fmrif[fmri_key][:] - mean) / std  # todo 这样可以？
+        zqf = h5py.File(vector_file, 'r')
+        self.zq = zqf[latent_key][frame_idx::time_step]  # shape=(108000,32,32,128)
+
+        kf = h5py.File(k_file, 'r')
+        self.k = kf['k'][frame_idx::time_step].flatten()
+        # self.frame_idx = frame_idx
+        self.latent_idx = latent_idx
+        # self.time_step = time_step
+        self.mean = mean
+        self.std = std
+
+    def __getitem__(self, item):
+        fmri = self.response[:, item]
+        # fmri = np.nan_to_num(fmri)
+        # fmri = (fmri - self.mean) / self.std
+
+        vector = self.zq[item].reshape(1024, 128)
+        k = self.k[item, self.latent_idx]
+
+        return fmri, vector[self.latent_idx], k
 
     def __len__(self):
         return self.response.shape[-1]
@@ -122,9 +184,7 @@ def get_vim2_fmri_mean_std(voxel_train_file, dt_key):
         std = np.std(r)
     return mean, std
 
-
 # def get_latent_mean_std(latent_train_file):
 #     with h5py.File(latent_train_file, 'r') as f:
 #         latent = f['latent'][:].flatten()
 #         latent = np.mean
-

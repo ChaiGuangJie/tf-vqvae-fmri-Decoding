@@ -54,15 +54,15 @@ def testHeatmap(viz):
 
 
 # 可视化原始图像与重建图像的第frame_idx帧
-def show_rec_one_frame(viz, dt_key, frame_idx, time_step=15):
+def show_rec_one_frame(viz, dt_key, frame_idx, use_k, time_step=15):
     # with h5py.File("/data1/home/guangjie/Data/vim-2-gallant/orig/Stimuli.mat", 'r') as orif: #
     #     ori_data = orif['st' if dt_key == 'rt' else 'sv']
     with h5py.File("/data1/home/guangjie/Data/vim-2-gallant/myOrig/Stimuli_st_{}.hdf5".format(
             'train' if dt_key == 'rt' else 'test'), 'r') as orif:  #
         ori_data = orif['st']
         with h5py.File(
-                "/data1/home/guangjie/Data/vim-2-gallant/rec_by_ze_of_vqvae/subject1/{}/frame_{}/subject_1_{}_frame_{}_rec.hdf5".format(
-                    dt_key, frame_idx, dt_key, frame_idx),
+                "/data1/home/guangjie/Data/vim-2-gallant/rec_by_zq_of_vqvae/subject1/{}/frame_{}/subject_1_{}_frame_{}_rec{}.hdf5".format(
+                    dt_key, frame_idx, dt_key, frame_idx, '_of_k' if use_k else ''), #todo by_zq by_ze
                 'r') as recf:
             rec_data = recf['rec']
 
@@ -102,7 +102,7 @@ if __name__ == '__main__':
 
     # testHeatmap(viz)
     # show_z_flow(viz)
-    show_rec_one_frame(viz, 'rv', frame_idx=4)
+    show_rec_one_frame(viz, 'rt', frame_idx=0, use_k=True)
     # show_gen_k_heatmap('rv')
     # _Y = np.linspace(-5, 5, 100)
     # Y = np.column_stack((_Y * _Y, np.sqrt(_Y + 5)))
