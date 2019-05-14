@@ -20,13 +20,27 @@ class Vim2_Stimuli_Dataset(Dataset):
 class vqvae_ze_dataset(Dataset):
     def __init__(self, file):
         zef = h5py.File(file, 'r')
-        self.latent = zef['latent']  # shape = (540,1024,128)
+        self.latent = zef['latent']  # shape = (540,1024,128) latent
 
     def __getitem__(self, item):
         return self.latent[item].reshape((32, 32, 128))
 
     def __len__(self):
         return self.latent.shape[0]
+
+
+class vqvae_zq_dataset(Dataset):
+    def __init__(self, file, frame_idx=0, time_step=15):
+        zqf = h5py.File(file, 'r')
+        self.zq = zqf['zq']
+        self.frame_idx = frame_idx
+        self.time_step = time_step
+
+    def __getitem__(self, item):
+        return self.zq[self.frame_idx + item * self.time_step]
+
+    def __len__(self):
+        return self.zq.shape[0] // self.time_step
 
 
 # class fmri_vector_dataset(Dataset):
@@ -107,3 +121,10 @@ def get_vim2_fmri_mean_std(voxel_train_file, dt_key):
         mean = np.mean(r)
         std = np.std(r)
     return mean, std
+
+
+# def get_latent_mean_std(latent_train_file):
+#     with h5py.File(latent_train_file, 'r') as f:
+#         latent = f['latent'][:].flatten()
+#         latent = np.mean
+

@@ -54,12 +54,15 @@ def testHeatmap(viz):
 
 
 # 可视化原始图像与重建图像的第frame_idx帧
-def show_rec_one_frame(viz, dt_key, frame_idx=0, time_step=15):
-    with h5py.File("/data1/home/guangjie/Data/vim-2-gallant/orig/Stimuli.mat", 'r') as orif:
-        ori_data = orif['st' if dt_key == 'rt' else 'sv']
+def show_rec_one_frame(viz, dt_key, frame_idx, time_step=15):
+    # with h5py.File("/data1/home/guangjie/Data/vim-2-gallant/orig/Stimuli.mat", 'r') as orif: #
+    #     ori_data = orif['st' if dt_key == 'rt' else 'sv']
+    with h5py.File("/data1/home/guangjie/Data/vim-2-gallant/myOrig/Stimuli_st_{}.hdf5".format(
+            'train' if dt_key == 'rt' else 'test'), 'r') as orif:  #
+        ori_data = orif['st']
         with h5py.File(
-                "/data1/home/guangjie/Data/vim-2-gallant/rec_by_ze_of_vqvae/subject1/{}/frame_0/subject_1_{}_frame_0_rec.hdf5".format(
-                    dt_key, dt_key),
+                "/data1/home/guangjie/Data/vim-2-gallant/rec_by_ze_of_vqvae/subject1/{}/frame_{}/subject_1_{}_frame_{}_rec.hdf5".format(
+                    dt_key, frame_idx, dt_key, frame_idx),
                 'r') as recf:
             rec_data = recf['rec']
 
@@ -73,12 +76,42 @@ def show_rec_one_frame(viz, dt_key, frame_idx=0, time_step=15):
                 time.sleep(1)
 
 
+def show_gen_k_heatmap(dt_key, frame_idx=0, time_step=15):
+    with h5py.File(
+            "/data1/home/guangjie/Data/vim-2-gallant/regressed_ze_of_vqvae/subject_1/{}/frame_0/subject_1_frame_0_ze_latent_all.hdf5".format(
+                dt_key), 'r') as zef:
+        ze_data = zef['latent']
+        with h5py.File("/data1/home/guangjie/Data/vim-2-gallant/myOrig/imagenet128_embeds_from_vqvae.hdf5",
+                       'r') as ebdf:
+            embeds = ebdf['embeds'][:]
+            with h5py.File("/data1/home/guangjie/Data/vim-2-gallant/myOrig/k_from_vqvae_{}.hdf5".format(
+                    'st' if dt_key == 'rt' else 'sv'), 'r') as kf:
+                true_k_data = kf['k']
+                for i in range(10):
+                    ze = ze_data[i].reshape((32, 32, 1, 128))
+                    t = np.linalg.norm(ze - embeds, axis=-1)
+                    k = np.argmin(t, -1).flatten()
+                    true_k = true_k_data[frame_idx + i * time_step].flatten()
+                    diff = abs(true_k - k)
+                    print(np.mean(diff))
+
+
 if __name__ == '__main__':
     viz = Visdom(server="http://localhost", env='visualize')
     assert viz.check_connection(timeout_seconds=3)
 
     # testHeatmap(viz)
     # show_z_flow(viz)
-    show_rec_one_frame(viz, 'rv')
+    show_rec_one_frame(viz, 'rv', frame_idx=4)
+    # show_gen_k_heatmap('rv')
+    # _Y = np.linspace(-5, 5, 100)
+    # Y = np.column_stack((_Y * _Y, np.sqrt(_Y + 5)))
+    # X = np.column_stack((_Y, _Y))
+    # viz.line(
+    #     Y=Y,
+    #     X=X,
+    #     opts=dict(markers=False),
+    # )
+
     print('end')
     viz.close()

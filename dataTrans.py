@@ -1,10 +1,12 @@
 import h5py
 import tensorflow as tf
-from MyDataset import vqvae_ze_dataset, vqvae_ze_dataset, Vim2_Stimuli_Dataset
+from MyDataset import vqvae_ze_dataset, vqvae_ze_dataset, Vim2_Stimuli_Dataset, vqvae_zq_dataset
 from torch.utils.data import DataLoader
 from model import VQVAE, _imagenet_arch
 import numpy as np
 import os
+
+os.environ["CUDA_VISIBLE_DEVICES"] = "2,3"
 
 
 def extract_k(file, Dataset=vqvae_ze_dataset):
@@ -32,17 +34,17 @@ def extract_k(file, Dataset=vqvae_ze_dataset):
                         print(step)
 
 
-def concatenate_ze(dt_key, n_lantent=1024):
+def concatenate_ze(dt_key, frame_idx, n_lantent=1024):
     latents = []
     for i in range(n_lantent):
         with h5py.File(
-                "/data1/home/guangjie/Data/vim-2-gallant/regressed_ze_of_vqvae/subject_1/{}/frame_0/subject_1_frame_0_ze_latent_{}.hdf5".format(
-                    dt_key, i), 'r') as f:
+                "/data1/home/guangjie/Data/vim-2-gallant/regressed_ze_of_vqvae/subject_1/{}/frame_{}/subject_1_frame_{}_ze_latent_{}.hdf5".format(
+                    dt_key, frame_idx, frame_idx, i), 'r') as f:  # todo subject frame format
             latents.append(f['latent'][:])  # shape = (540,128) (108000,128)
 
     with h5py.File(
-            "/data1/home/guangjie/Data/vim-2-gallant/regressed_ze_of_vqvae/subject_1/{}/frame_0/subject_1_frame_0_ze_latent_all.hdf5".format(
-                dt_key),
+            "/data1/home/guangjie/Data/vim-2-gallant/regressed_ze_of_vqvae/subject_1/{}/frame_{}/subject_1_frame_{}_ze_latent_all.hdf5".format(
+                dt_key, frame_idx, frame_idx),
             'w') as sf:
         all_latent_dataset = sf.create_dataset('latent', shape=(latents[0].shape[0], n_lantent, latents[0].shape[-1]))
 
@@ -51,9 +53,9 @@ def concatenate_ze(dt_key, n_lantent=1024):
             print(j)
 
 
-def rec_a_frame_img_from_ze(dt_key):
-    save_dir = "/data1/home/guangjie/Data/vim-2-gallant/rec_by_ze_of_vqvae/subject1/{}/frame_0".format(
-        dt_key)
+def rec_a_frame_img_from_ze(dt_key, frame_idx):
+    save_dir = "/data1/home/guangjie/Data/vim-2-gallant/rec_by_ze_of_vqvae/subject1/{}/frame_{}".format(
+        dt_key, frame_idx)
     os.makedirs(save_dir, exist_ok=True)
     MODEL, K, D = ('models/imagenet/last.ckpt', 512, 128)
     with tf.variable_scope('net'):
@@ -72,15 +74,16 @@ def rec_a_frame_img_from_ze(dt_key):
     net.load(sess, MODEL)
 
     dataset = vqvae_ze_dataset(
-        "/data1/home/guangjie/Data/vim-2-gallant/regressed_ze_of_vqvae/subject_1/{}/frame_0/subject_1_frame_0_ze_latent_all.hdf5".format(
-            dt_key))
-    dataloader = DataLoader(dataset, batch_size=10, shuffle=False, num_workers=1)
+        "/data1/home/guangjie/Data/vim-2-gallant/regressed_ze_of_vqvae/subject_1/{}/frame_{}/subject_1_frame_{}_ze_latent_all.hdf5".format(
+            dt_key, frame_idx, frame_idx))  # todo latent?
+    # dataset = vqvae_zq_dataset("/data1/home/guangjie/Data/vim-2-gallant/myOrig/zq_from_vqvae_sv.hdf5")
+    dataloader = DataLoader(dataset, batch_size=10, shuffle=False, num_workers=0)
 
-    with h5py.File(os.path.join(save_dir, "subject_1_{}_frame_0_rec.hdf5".format(dt_key)), 'w') as sf:
+    with h5py.File(os.path.join(save_dir, "subject_1_{}_frame_{}_rec.hdf5".format(dt_key, frame_idx)), 'w') as sf:
         rec_dataset = sf.create_dataset('rec', shape=(len(dataset), 128, 128, 3), dtype=np.uint8)
         begin_idx = 0
         for step, data in enumerate(dataloader):
-            rec = sess.run(net.p_x_z, feed_dict={net.z_e: data})
+            rec = sess.run(net.p_x_z, feed_dict={net.z_e: data})  # todo z_e z_q 直接喂给zq的话在验证集效果更差。。。
             rec = (rec * 255.0).astype(np.uint8)
             end_idx = begin_idx + len(rec)
             rec_dataset[begin_idx:end_idx] = rec
@@ -119,8 +122,40 @@ def extract_zq_from_vqvae(dt_key):
             print(step)
 
 
+def split_rt_to_train_test():
+    with h5py.File("/data1/home/guangjie/Data/vim-2-gallant/myOrig/VoxelResponses_subject1_v1234_rt.hdf5", 'r') as rtf:
+        rt = rtf['rt']
+        with h5py.File("/data1/home/guangjie/Data/vim-2-gallant/myOrig/VoxelResponses_subject1_v1234_rt_train.hdf5",
+                       'w') as trainf:
+            trainf.create_dataset('rt', data=rt[:, :6000])
+        with h5py.File("/data1/home/guangjie/Data/vim-2-gallant/myOrig/VoxelResponses_subject1_v1234_rt_test.hdf5",
+                       'w') as testf:
+            testf.create_dataset('rt', data=rt[:, 6000:])
+
+
+def split_st_to_train_test():
+    with h5py.File("/data1/home/guangjie/Data/vim-2-gallant/orig/Stimuli.mat", 'r') as rtf:
+        st = rtf['st']
+        with h5py.File("/data1/home/guangjie/Data/vim-2-gallant/myOrig/Stimuli_st_train.hdf5", 'w') as trainf:
+            trainf.create_dataset('st', data=st[:90000])
+        with h5py.File("/data1/home/guangjie/Data/vim-2-gallant/myOrig/Stimuli_st_test.hdf5", 'w') as testf:
+            testf.create_dataset('st', data=st[90000:])
+
+
+def split_zq_to_train_test():
+    with h5py.File("/data1/home/guangjie/Data/vim-2-gallant/myOrig/zq_from_vqvae_st.hdf5", 'r') as zqf:
+        zq = zqf['zq']
+        with h5py.File("/data1/home/guangjie/Data/vim-2-gallant/myOrig/zq_from_vqvae_st_train.hdf5", 'w') as trainf:
+            trainf.create_dataset('zq', data=zq[:90000])
+        with h5py.File("/data1/home/guangjie/Data/vim-2-gallant/myOrig/zq_from_vqvae_st_test.hdf5", 'w') as testf:
+            testf.create_dataset('zq', data=zq[90000:])
+
+
 if __name__ == '__main__':
     # extract_k(file="/data1/home/guangjie/Data/vim-2-gallant/myOrig/ze_embeds_from_vqvae_st.hdf5")
-    # concatenate_ze('rv')
-    rec_a_frame_img_from_ze('rv')
-    # extract_zq_from_vqvae('sv')
+    # concatenate_ze('rv', frame_idx=4)
+    rec_a_frame_img_from_ze('rv', frame_idx=4)
+    # extract_zq_from_vqvae('st')
+    # split_rt_to_train_test()
+    # split_st_to_train_test()
+    # split_zq_to_train_test()
