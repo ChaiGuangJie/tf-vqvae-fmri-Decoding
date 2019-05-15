@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-from MyDataset import fmri_vector_dataset, get_vim2_fmri_mean_std, fmri_dataset
+from MyDataset import fmri_vector_dataset, get_vim2_fmri_mean_std, fmri_dataset, fmri_vector_k_dataset
 import h5py
 from torch.utils.data import DataLoader
 from visdom import Visdom
@@ -29,25 +29,72 @@ def constraintMSELoss(out, target):  # todo 优化
     return normal_criterion(out,
                             target), argminloss  # -torch.log(argmaxloss)  # 1 / argmaxloss  # todo 超参数    #torch.log(argmaxloss)
 
-    # # targetloss = nn.functional.mse_loss(out, target)
-    # batchloss_list = []
-    # for i, (o, t) in enumerate(zip(out, target)):
-    #     targetloss = nn.functional.mse_loss(o, t)
-    #     loss_list = []
-    #     for e in embeds:
-    #         loss_item = nn.functional.mse_loss(o, e)
-    #         if loss_item > targetloss:
-    #             loss_list.append(-loss_item)
-    #     # loss_list = torch.as_tensor(loss_list).cuda()
-    #     # t = torch.lt(targetloss, loss_list)
-    #     loss_list = torch.tensor(loss_list, requires_grad=True)
-    #     mean_loss = torch.mean(loss_list)
-    #     if not torch.isnan(mean_loss):  # todo 为什么会出现nan?
-    #         batchloss_list.append(mean_loss)
-    #     # 找到比target loss 大的 加负号加权求和返回返回
-    # # notargetloss = nn.functional.mse_loss(out[0], embeds)
-    # batchloss_list = torch.stack(batchloss_list)
-    # return torch.mean(batchloss_list).cuda() + nn.functional.mse_loss(out, target).cuda()
+
+def constraint2dist(out, target, k):
+    global embeds, normal_criterion
+    dist1 = normal_criterion(out, target)
+    dist2 = normal_criterion(out, embeds[k])
+
+    normal_loss = torch.mean((out - embeds[k]) ** 2, dim=1)
+    expand_out = out[:, None, :]
+    dist = torch.mean((expand_out - embeds) ** 2, dim=2)
+    # todo 防止空列表
+    # diff = normal_loss[:, None] - dist
+    # select_idx = torch.le(torch.tensor(0.0).cuda(), diff)
+    # argminloss = torch.mean(diff[select_idx])
+    ge_idx = torch.ge(normal_loss[:, None], dist)
+
+    argmaxloss = torch.sum(dist[ge_idx])
+    # return (dist1 + dist2) / 2, argminloss
+    # return (torch.log(dist1 + 1) + torch.log(dist2 + 1)) / 2, torch.log(argminloss+ 1)
+    return torch.log(dist2 + 1), torch.exp(-argmaxloss * 0.1)  # 1 / argmaxloss
+    # torch.log(1.8 - argmaxloss)  # -torch.log(argmaxloss) * 0.0001 dist1 +
+    #  torch.exp((dist1 + dist2) / 2) - 1 #
+    # torch.exp(-argmaxloss)*100  # argminloss  # torch.log(argminloss + 1)
+    # return dist1, dist2
+
+
+def constraint2distForFrames(outs, targets, ks):
+    '''
+    计算15帧fmri回归后的loss
+    :param outs: shape=(batch_size,time_step,128)
+    :param targets: shape=(batch_size,time_step,128)
+    :param ks: shape=(batch_size,time_step,1)
+    :return: (mse(out,ze)+mse(out,zq))/2,embeds中所有与out的距离小于target的距离差的均值
+    '''
+    global embeds, normal_criterion
+    dist1 = normal_criterion(outs, targets)
+    dist2 = normal_criterion(outs, embeds[ks])  # todo 检查
+
+    # normal_loss = torch.mean((out - embeds[k]) ** 2, dim=1)
+    # expand_out = out[:, None, :]
+    # dist = torch.mean((expand_out - embeds) ** 2, dim=2)
+    # # todo 防止空列表
+    # diff = normal_loss[:, None] - dist
+    # select_idx = torch.le(torch.tensor(0.0).cuda(), diff)
+    # argminloss = torch.mean(diff[select_idx])
+    # return (dist1 + dist2) / 2, argminloss
+
+
+# # targetloss = nn.functional.mse_loss(out, target)
+# batchloss_list = []
+# for i, (o, t) in enumerate(zip(out, target)):
+#     targetloss = nn.functional.mse_loss(o, t)
+#     loss_list = []
+#     for e in embeds:
+#         loss_item = nn.functional.mse_loss(o, e)
+#         if loss_item > targetloss:
+#             loss_list.append(-loss_item)
+#     # loss_list = torch.as_tensor(loss_list).cuda()
+#     # t = torch.lt(targetloss, loss_list)
+#     loss_list = torch.tensor(loss_list, requires_grad=True)
+#     mean_loss = torch.mean(loss_list)
+#     if not torch.isnan(mean_loss):  # todo 为什么会出现nan?
+#         batchloss_list.append(mean_loss)
+#     # 找到比target loss 大的 加负号加权求和返回返回
+# # notargetloss = nn.functional.mse_loss(out[0], embeds)
+# batchloss_list = torch.stack(batchloss_list)
+# return torch.mean(batchloss_list).cuda() + nn.functional.mse_loss(out, target).cuda()
 
 
 class LinearRegressionModel(nn.Module):
@@ -65,11 +112,33 @@ class LinearRegressionModel(nn.Module):
         return self.activate(out)
 
 
+class NonLinearRegressionModel(nn.Module):
+
+    def __init__(self, input_dim, output_dim):
+        super().__init__()
+        # Calling Super Class's constructor
+        self.linear1 = nn.Linear(input_dim, 1024)  # 1024 256 128
+        # self.linear2 = nn.Linear(2048, 1024)  # 1024 256 128
+        self.linear2 = nn.Linear(1024, output_dim)
+
+        # nn.linear is defined in nn.Module
+        # self.relu = nn.LeakyReLU()
+        self.activate = nn.Tanh()
+        # self.out_activate = nn.Tanh()
+
+    def forward(self, x):
+        # Here the forward pass is simply a linear function
+        out = self.activate(self.linear1(x))
+        # out = self.activate(self.linear2(out))
+        out = self.activate(self.linear2(out))
+        return out
+
+
 def init_weights(m):
     if type(m) == nn.Linear:
-        nn.init.uniform_(m.weight, a=-0.005, b=0.005)
+        nn.init.uniform_(m.weight, a=-0.001, b=0.001)
         # if m.bias:
-        nn.init.uniform_(m.bias, a=-0.005, b=0.005)
+        nn.init.uniform_(m.bias, a=-0.001, b=0.001)
         # m.weight.data.normal_(0.0, 0.02)
         # m.bias.data.normal_(0.0, 0.02)
 
@@ -82,7 +151,7 @@ class LSTMRegressionModel(nn.Module):
 
     def forward(self, x):
         # todo hx,cx init
-        hx = torch.full((x.shape[0], self.hidden_size), 0.01).cuda()
+        hx = torch.full((x.shape[0], self.hidden_size), 0.01).cuda()  # todo 更改初始值会影响精度
         cx = torch.full((x.shape[0], self.hidden_size), 0.01).cuda()
 
         out_list = []
@@ -93,34 +162,73 @@ class LSTMRegressionModel(nn.Module):
         return torch.from_numpy(out_list)
 
 
-def train_lstm(viz, model, dataloader, optimiser, criterion, train_global_idx):
+def train_lstm(viz, model, dataloader, optimiser, criterion, train_win_mse, train_win_dist, train_global_idx, logIter):
     model.train()
-
-    for step, (fmri, vector) in enumerate(dataloader):
+    for step, (fmri, latence, k) in enumerate(dataloader):
         # 一次性读15帧数据
         optimiser.zero_grad()
-
         fmri = fmri.cuda()
-        vector = vector.cuda()
-
+        latence = latence.cuda()
         out = model(fmri)
-        loss = criterion(out, vector)
+        mseloss, diffloss = criterion(out, latence, k)
+        loss = mseloss + diffloss
         loss.backward()
-
         optimiser.step()
+        if step % logIter == 0:
+            if train_win_mse and train_win_dist:
+                # viz.line(Y=torch.cat([mseLoss.view(1),distLoss.view(1)]).view(1,2), X=np.column_stack((train_global_idx,train_global_idx)), win=train_win,
+                #          update="append",opts={'title': 'train loss'})
+                viz.line(Y=mseloss.view(1), X=train_global_idx, win=train_win_mse, update="append",
+                         opts={'title': 'train mse loss'})
+                viz.line(Y=diffloss.view(1), X=train_global_idx, win=train_win_dist, update="append",
+                         opts={'title': 'train dist loss'})
+                # torch.cat([mseLoss.view(1),distLoss.view(1)]).view(1,2)
+                # np.column_stack((train_global_idx,train_global_idx))
+                train_global_idx += 1
+                print('step_{}_train_loss : {}'.format(step, loss.item()))
+
+
+def test_lstm(viz, model, dataloader, criterion, test_win_mse, test_win_dist, test_global_idx, logIter):
+    model.eval()
+    with torch.no_grad():
+        mse_loss_list = []
+        dist_loss_list = []
+        for step, (fmri, latence, k) in enumerate(dataloader):
+            # 一次性读15帧数据
+            fmri = fmri.cuda()
+            latence = latence.cuda()
+            out = model(fmri)
+            mseloss, diffloss = criterion(out, latence, k)
+            # loss = mseloss + diffloss
+            mse_loss_list.append(mseloss)
+            dist_loss_list.append(diffloss)
+
+        mse_mean_loss = sum(mse_loss_list) / len(mse_loss_list)
+        dist_mean_loss = sum(dist_loss_list) / len(dist_loss_list)
+
+        if test_win_mse and test_win_dist:
+            viz.line(Y=mse_mean_loss.view(1), X=test_global_idx, win=test_win_mse, update="append",
+                     opts={'title': 'test mse loss'})
+            viz.line(Y=dist_mean_loss.view(1), X=test_global_idx, win=test_win_dist, update="append",
+                     opts={'title': 'test dist loss'})
+            test_global_idx += 1
+            print('test_mse_loss : {},test_dist_loss:{}'.format(mse_mean_loss.item(), dist_mean_loss.item()))
+        return mse_mean_loss  # todo
 
 
 def train(viz, model, dataloader, train_win_mse, train_win_dist, logIter, optimiser, criterion, train_global_idx):
     model.train()
-    for step, (fmri, vector) in enumerate(dataloader):
+    for step, (fmri, vector, k) in enumerate(dataloader):
         # model.zero_grad()
         optimiser.zero_grad()
         fmri = fmri.cuda()
         vector = vector.cuda()
 
         out = model(fmri)
-        mseLoss, distLoss = criterion(out, vector)
-        adjust_distLoss = distLoss * 1e-9  # todo##########################################
+        mseLoss, distLoss = criterion(out, vector, k)
+        adjust_distLoss = distLoss  # (distLoss + 1e-5)
+        # * 0.1  # * 2  # (distLoss + 1e-5) * 9300 * (mseLoss.detach().item() + 1e-5)
+        #  todo##########################################
         loss = mseLoss + adjust_distLoss
         loss.backward()
 
@@ -146,12 +254,12 @@ def test(viz, model, test_dataloader, test_win_mse, test_win_dist, criterion, te
     with torch.no_grad():
         mse_loss_list = []
         dist_loss_list = []
-        for step, (fmri, vector) in enumerate(test_dataloader):
+        for step, (fmri, vector, k) in enumerate(test_dataloader):
             fmri = fmri.cuda()
             vector = vector.cuda()
 
             out = model(fmri)
-            mseLoss, distLoss = criterion(out, vector)
+            mseLoss, distLoss = criterion(out, vector, k)
             loss = mseLoss
 
             mse_loss_list.append(mseLoss)
@@ -177,30 +285,32 @@ def train_one_frame(viz, model, init_weights, criterion, optimiser, mean, std, e
     os.makedirs(
         '/data1/home/guangjie/Data/vim-2-gallant/regressionModel/subject_{}/frame_{}'.format(subject, frame_idx),
         exist_ok=True)
-    for latent_idx in np.arange(0, 10):  # range(n_lantent):
+    for latent_idx in np.arange(100, 1024):  # range(n_lantent):
         model.apply(init_weights)
+        # model = NonLinearRegressionModel(i_dim, o_dim).cuda()
         # dataset = fmri_vector_dataset(
-        #     fmri_file="/data1/home/guangjie/Data/vim-2-gallant/myOrig/VoxelResponses_subject{}_v1234_rt_rv_rva0.hdf5".format(
-        #         subject), zq_file="/data1/home/guangjie/Data/vim-2-gallant/myOrig/zq_from_vqvae_st.hdf5", mean=mean,
-        #     std=std, fmri_key='rt', frame_idx=frame_idx, latent_idx=latent_idx)
+        #     fmri_file="/data1/home/guangjie/Data/vim-2-gallant/myOrig/VoxelResponses_subject{}_v1234_rt_train.hdf5".format(
+        #         subject), zq_file="/data1/home/guangjie/Data/vim-2-gallant/myOrig/ze_from_vqvae_st_train.hdf5",
+        #     mean=mean,
+        #     std=std, fmri_key='rt', frame_idx=frame_idx, latent_key='ze', latent_idx=latent_idx)
         # dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=num_workers)
         #
         # test_dataset = fmri_vector_dataset(
-        #     fmri_file="/data1/home/guangjie/Data/vim-2-gallant/myOrig/VoxelResponses_subject{}_v1234_rt_rv_rva0.hdf5".format(
-        #         subject), zq_file="/data1/home/guangjie/Data/vim-2-gallant/myOrig/zq_from_vqvae_sv.hdf5", mean=mean,
-        #     std=std, fmri_key='rv', frame_idx=frame_idx, latent_idx=latent_idx)
-        # test_dataloader = DataLoader(test_dataset, batch_size=batch_size, shuffle=True, num_workers=num_workers)
-        dataset = fmri_vector_dataset(
+        #     fmri_file="/data1/home/guangjie/Data/vim-2-gallant/myOrig/VoxelResponses_subject{}_v1234_rt_test.hdf5".format(
+        #         subject), zq_file="/data1/home/guangjie/Data/vim-2-gallant/myOrig/ze_from_vqvae_st_test.hdf5",
+        #     mean=mean,
+        #     std=std, fmri_key='rt', frame_idx=frame_idx, latent_key='ze', latent_idx=latent_idx)
+        dataset = fmri_vector_k_dataset(
             fmri_file="/data1/home/guangjie/Data/vim-2-gallant/myOrig/VoxelResponses_subject{}_v1234_rt_train.hdf5".format(
-                subject), zq_file="/data1/home/guangjie/Data/vim-2-gallant/myOrig/ze_from_vqvae_st_train.hdf5",
-            mean=mean,
-            std=std, fmri_key='rt', frame_idx=frame_idx, latent_key='ze', latent_idx=latent_idx)
+                subject), latent_file="/data1/home/guangjie/Data/vim-2-gallant/myOrig/ze_from_vqvae_st_train.hdf5",
+            k_file="/data1/home/guangjie/Data/vim-2-gallant/myOrig/k_from_vqvae_st_train.hdf5", mean=mean, std=std,
+            fmri_key='rt', frame_idx=frame_idx, latent_key='ze', latent_idx=latent_idx)
         dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=num_workers)
 
-        test_dataset = fmri_vector_dataset(
+        test_dataset = fmri_vector_k_dataset(
             fmri_file="/data1/home/guangjie/Data/vim-2-gallant/myOrig/VoxelResponses_subject{}_v1234_rt_test.hdf5".format(
-                subject), zq_file="/data1/home/guangjie/Data/vim-2-gallant/myOrig/ze_from_vqvae_st_test.hdf5",
-            mean=mean,
+                subject), latent_file="/data1/home/guangjie/Data/vim-2-gallant/myOrig/ze_from_vqvae_st_test.hdf5",
+            k_file="/data1/home/guangjie/Data/vim-2-gallant/myOrig/k_from_vqvae_st_test.hdf5", mean=mean,
             std=std, fmri_key='rt', frame_idx=frame_idx, latent_key='ze', latent_idx=latent_idx)
         test_dataloader = DataLoader(test_dataset, batch_size=batch_size, shuffle=True, num_workers=num_workers)
         train_global_idx = np.array([0])
@@ -240,7 +350,8 @@ def apply_regression_to_fmri(dt_key, frame_idx, subject=1, n_lantent=1024, model
                                                                                                              dt_key,
                                                                                                              frame_idx)
     os.makedirs(save_dir, exist_ok=True)
-    model = LinearRegressionModel(model_in_dim, model_out_dim).cuda()
+    model = NonLinearRegressionModel(model_in_dim,
+                                     model_out_dim).cuda()  # LinearRegressionModel(model_in_dim, model_out_dim).cuda()
     # mean, std = get_vim2_fmri_mean_std(
     #     "/data1/home/guangjie/Data/vim-2-gallant/myOrig/VoxelResponses_subject1_v1234_rt_rv_rva0.hdf5",
     #     'rt')  # todo 归一化方式
@@ -283,9 +394,9 @@ def apply_regression_to_fmri(dt_key, frame_idx, subject=1, n_lantent=1024, model
 
 
 def train_all_frame(viz, i_dim, o_dim, lr, weight_decay, init_weights, epochs, logIterval):
-    model = LinearRegressionModel(i_dim, o_dim).cuda()
-
-    criterion = constraintMSELoss  # nn.MSELoss()  # Mean Squared Loss
+    # model = LinearRegressionModel(i_dim, o_dim).cuda()
+    model = NonLinearRegressionModel(i_dim, o_dim).cuda()
+    criterion = constraint2dist  # constraintMSELoss  # nn.MSELoss()  # Mean Squared Loss
     optimiser = torch.optim.SGD(model.parameters(), lr=lr, weight_decay=weight_decay)  # Stochastic Gradient Descent
     # optimiser = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
     # optimiser = torch.optim.RMSprop(model.parameters(), lr=lr, weight_decay=weight_decay)
@@ -298,7 +409,7 @@ def train_all_frame(viz, i_dim, o_dim, lr, weight_decay, init_weights, epochs, l
     mean, std = None, None
     # o_mean,o_std = get_vector_mean_std()
     # cuda:3 [12, 13, 14]
-    for frame_idx in [6]:
+    for frame_idx in [0]:
         print('{} frame begin:'.format(frame_idx))
         train_one_frame(viz, model, init_weights, criterion, optimiser, mean, std, epochs, logIterval,
                         drawline=True, frame_idx=frame_idx, batch_size=64, num_workers=0, i_dim=i_dim, o_dim=o_dim,
@@ -380,9 +491,9 @@ if __name__ == '__main__':
     assert viz.check_connection(timeout_seconds=3)
     torch.manual_seed(7)
 
-    lr = 0.01  # best:0.2
-    weight_decay = 0.000001  # best:0.01 todo 调整此参数，改变test loss 随train loss 下降的程度
-    epochs = 180  # best:200 50
+    lr = 0.001  # best:0.2
+    weight_decay = 1e-5  # best:0.01 todo 调整此参数，改变test loss 随train loss 下降的程度
+    epochs = 170  # best:200 50
     logIterval = 30
     subject = 1
     i_dim = 4917
@@ -393,7 +504,7 @@ if __name__ == '__main__':
     # for i in range(1024):
     # show_regression_performance(model_in_dim=i_dim, model_out_dim=o_dim, frame_idx=0, latent_idx=0)
     train_all_frame(viz, i_dim, o_dim, lr, weight_decay, init_weights, epochs, logIterval)
-    # apply_regression_to_fmri('rv', frame_idx=5, subject=1, n_lantent=1024, model_in_dim=4917, model_out_dim=128,
+    # apply_regression_to_fmri('rv', frame_idx=0, subject=1, n_lantent=1024, model_in_dim=4917, model_out_dim=128,
     #                          dim_lantent=128)
 
     # viz.close()

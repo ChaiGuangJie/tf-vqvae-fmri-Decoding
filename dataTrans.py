@@ -205,9 +205,9 @@ def build_zq_from_k_embeds(k_file, embeds_file, save_file):
 
 if __name__ == '__main__':
     # extract_k(file="/data1/home/guangjie/Data/vim-2-gallant/myOrig/ze_embeds_from_vqvae_st.hdf5")
-    # concatenate_ze('rv', frame_idx=5)
-    # rec_a_frame_img_from_ze('rv', frame_idx=5)
-    rec_a_frame_img_from_zq('rt', frame_idx=0, subject=1)
+    concatenate_ze('rv', frame_idx=0)
+    rec_a_frame_img_from_ze('rv', frame_idx=0)
+    # rec_a_frame_img_from_zq('rt', frame_idx=0, subject=1)
     # extract_zq_from_vqvae('st')
     # split_rt_to_train_test()
     # split_st_to_train_test()
