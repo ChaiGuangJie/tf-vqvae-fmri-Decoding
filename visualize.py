@@ -102,7 +102,7 @@ if __name__ == '__main__':
 
     # testHeatmap(viz)
     # show_z_flow(viz)
-    show_rec_one_frame(viz, 'rv', frame_idx=0, use_k=False)
+    show_rec_one_frame(viz, 'rt', frame_idx=1, use_k=False)
     # show_gen_k_heatmap('rv')
     # _Y = np.linspace(-5, 5, 100)
     # Y = np.column_stack((_Y * _Y, np.sqrt(_Y + 5)))

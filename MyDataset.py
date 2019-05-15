@@ -56,16 +56,17 @@ class vqvae_k_dataset(Dataset):
 
 
 class fmri_k_dataset(Dataset):
-    def __init__(self, fmri_file, k_file, fmri_key, frame_idx, time_step=15):
+    def __init__(self, fmri_file, k_file, fmri_key, frame_idx, latence_idx, time_step=15):
         fmrif = h5py.File(fmri_file, 'r')
         self.resp = fmrif[fmri_key][:]
         kf = h5py.File(k_file, 'r')
-        self.k = kf['k'][frame_idx::time_step].reshape(-1, 1024).astype(np.float32)
+        self.k = kf['k'][frame_idx::time_step].reshape(-1, 1024).astype(np.int64)
+        self.latence_idx = latence_idx
         assert self.resp.shape[-1] == self.k.shape[0]
 
     def __getitem__(self, item):
         fmri = self.resp[:, item]
-        vector = self.k[item] / 512  # , self.row
+        vector = self.k[item, self.latence_idx]  # / 512  # , self.row
         return fmri, vector
 
     def __len__(self):

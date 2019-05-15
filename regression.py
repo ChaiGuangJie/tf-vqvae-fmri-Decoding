@@ -1,13 +1,13 @@
 import torch
 import torch.nn as nn
-from MyDataset import fmri_vector_dataset, get_vim2_fmri_mean_std, fmri_dataset, fmri_vector_k_dataset
+from MyDataset import fmri_vector_dataset, fmri_k_dataset, fmri_dataset, fmri_vector_k_dataset
 import h5py
 from torch.utils.data import DataLoader
 from visdom import Visdom
 import numpy as np
 import os
 
-os.environ["CUDA_VISIBLE_DEVICES"] = "3"
+os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
 with h5py.File("/data1/home/guangjie/Data/vim-2-gallant/myOrig/imagenet128_embeds_from_vqvae.hdf5", 'r') as ebf:
     embeds = torch.from_numpy(ebf['embeds'][:]).cuda()
@@ -32,22 +32,24 @@ def constraintMSELoss(out, target):  # todo 优化
 
 def constraint2dist(out, target, k):
     global embeds, normal_criterion
-    dist1 = normal_criterion(out, target)
+    # dist1 = normal_criterion(out, target)
     dist2 = normal_criterion(out, embeds[k])
 
     normal_loss = torch.mean((out - embeds[k]) ** 2, dim=1)
     expand_out = out[:, None, :]
     dist = torch.mean((expand_out - embeds) ** 2, dim=2)
     # todo 防止空列表
-    # diff = normal_loss[:, None] - dist
-    # select_idx = torch.le(torch.tensor(0.0).cuda(), diff)
-    # argminloss = torch.mean(diff[select_idx])
-    ge_idx = torch.ge(normal_loss[:, None], dist)
-
-    argmaxloss = torch.sum(dist[ge_idx])
+    diff = normal_loss[:, None] - dist
+    select_idx = torch.le(torch.tensor(0.0).cuda(), diff)
+    argminloss = torch.sum(diff[select_idx])
+    # ge_idx = torch.ge(normal_loss[:, None], dist)
+    return dist2, argminloss * 0.00001
+    # argmaxloss = torch.mean(dist[ge_idx])
     # return (dist1 + dist2) / 2, argminloss
     # return (torch.log(dist1 + 1) + torch.log(dist2 + 1)) / 2, torch.log(argminloss+ 1)
-    return torch.log(dist2 + 1), torch.exp(-argmaxloss * 0.1)  # 1 / argmaxloss
+    # return dist1, dist2 / argmaxloss - 1
+    # return torch.log(dist1 + dist2 + 1), -torch.log(argmaxloss)*0.001
+    # 0.001 / argmaxloss  # torch.exp(-argmaxloss * 0.1)  # 1 / argmaxloss
     # torch.log(1.8 - argmaxloss)  # -torch.log(argmaxloss) * 0.0001 dist1 +
     #  torch.exp((dist1 + dist2) / 2) - 1 #
     # torch.exp(-argmaxloss)*100  # argminloss  # torch.log(argminloss + 1)
@@ -118,8 +120,10 @@ class NonLinearRegressionModel(nn.Module):
         super().__init__()
         # Calling Super Class's constructor
         self.linear1 = nn.Linear(input_dim, 1024)  # 1024 256 128
-        # self.linear2 = nn.Linear(2048, 1024)  # 1024 256 128
-        self.linear2 = nn.Linear(1024, output_dim)
+        self.linear2 = nn.Linear(1024, output_dim)  # 1024 256 128
+        # self.linear2 = nn.Linear(4096, 2048)
+        # self.linear3 = nn.Linear(2048, 1024)
+        # self.linear4 = nn.Linear(1024, output_dim)
 
         # nn.linear is defined in nn.Module
         # self.relu = nn.LeakyReLU()
@@ -129,16 +133,18 @@ class NonLinearRegressionModel(nn.Module):
     def forward(self, x):
         # Here the forward pass is simply a linear function
         out = self.activate(self.linear1(x))
-        # out = self.activate(self.linear2(out))
         out = self.activate(self.linear2(out))
+        # out = self.activate(self.linear3(out))
+        # out = self.activate(self.linear4(out))
+        # out = self.activate(self.linear2(out))
         return out
 
 
 def init_weights(m):
     if type(m) == nn.Linear:
-        nn.init.uniform_(m.weight, a=-0.001, b=0.001)
+        nn.init.uniform_(m.weight, a=-0.0001, b=0.0001)
         # if m.bias:
-        nn.init.uniform_(m.bias, a=-0.001, b=0.001)
+        nn.init.uniform_(m.bias, a=-0.0001, b=0.0001)
         # m.weight.data.normal_(0.0, 0.02)
         # m.bias.data.normal_(0.0, 0.02)
 
@@ -218,14 +224,14 @@ def test_lstm(viz, model, dataloader, criterion, test_win_mse, test_win_dist, te
 
 def train(viz, model, dataloader, train_win_mse, train_win_dist, logIter, optimiser, criterion, train_global_idx):
     model.train()
-    for step, (fmri, vector, k) in enumerate(dataloader):
+    for step, (fmri, k) in enumerate(dataloader):
         # model.zero_grad()
         optimiser.zero_grad()
         fmri = fmri.cuda()
-        vector = vector.cuda()
+        # vector = vector.cuda()
 
         out = model(fmri)
-        mseLoss, distLoss = criterion(out, vector, k)
+        mseLoss, distLoss = criterion(out, None, k)
         adjust_distLoss = distLoss  # (distLoss + 1e-5)
         # * 0.1  # * 2  # (distLoss + 1e-5) * 9300 * (mseLoss.detach().item() + 1e-5)
         #  todo##########################################
@@ -254,12 +260,12 @@ def test(viz, model, test_dataloader, test_win_mse, test_win_dist, criterion, te
     with torch.no_grad():
         mse_loss_list = []
         dist_loss_list = []
-        for step, (fmri, vector, k) in enumerate(test_dataloader):
+        for step, (fmri, k) in enumerate(test_dataloader):
             fmri = fmri.cuda()
-            vector = vector.cuda()
+            # vector = vector.cuda()
 
             out = model(fmri)
-            mseLoss, distLoss = criterion(out, vector, k)
+            mseLoss, distLoss = criterion(out, None, k)
             loss = mseLoss
 
             mse_loss_list.append(mseLoss)
@@ -273,7 +279,7 @@ def test(viz, model, test_dataloader, test_win_mse, test_win_dist, criterion, te
             viz.line(Y=dist_mean_loss.view(1), X=test_global_idx, win=test_win_dist, update="append",
                      opts={'title': 'test dist loss'})
             test_global_idx += 1
-            print('test_mse_loss : {},test_dist_loss:{}'.format(mse_mean_loss.item(), 1 / dist_mean_loss.item()))
+            print('test_mse_loss : {},test_dist_loss:{}'.format(mse_mean_loss.item(), dist_mean_loss.item()))
         return mse_mean_loss  # todo
 
 
@@ -285,34 +291,34 @@ def train_one_frame(viz, model, init_weights, criterion, optimiser, mean, std, e
     os.makedirs(
         '/data1/home/guangjie/Data/vim-2-gallant/regressionModel/subject_{}/frame_{}'.format(subject, frame_idx),
         exist_ok=True)
-    for latent_idx in np.arange(100, 1024):  # range(n_lantent):
+    for latent_idx in np.arange(980,1024):  # range(n_lantent):
         model.apply(init_weights)
         # model = NonLinearRegressionModel(i_dim, o_dim).cuda()
-        # dataset = fmri_vector_dataset(
-        #     fmri_file="/data1/home/guangjie/Data/vim-2-gallant/myOrig/VoxelResponses_subject{}_v1234_rt_train.hdf5".format(
-        #         subject), zq_file="/data1/home/guangjie/Data/vim-2-gallant/myOrig/ze_from_vqvae_st_train.hdf5",
-        #     mean=mean,
-        #     std=std, fmri_key='rt', frame_idx=frame_idx, latent_key='ze', latent_idx=latent_idx)
-        # dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=num_workers)
-        #
-        # test_dataset = fmri_vector_dataset(
-        #     fmri_file="/data1/home/guangjie/Data/vim-2-gallant/myOrig/VoxelResponses_subject{}_v1234_rt_test.hdf5".format(
-        #         subject), zq_file="/data1/home/guangjie/Data/vim-2-gallant/myOrig/ze_from_vqvae_st_test.hdf5",
-        #     mean=mean,
-        #     std=std, fmri_key='rt', frame_idx=frame_idx, latent_key='ze', latent_idx=latent_idx)
-        dataset = fmri_vector_k_dataset(
+        dataset = fmri_k_dataset(
             fmri_file="/data1/home/guangjie/Data/vim-2-gallant/myOrig/VoxelResponses_subject{}_v1234_rt_train.hdf5".format(
-                subject), latent_file="/data1/home/guangjie/Data/vim-2-gallant/myOrig/ze_from_vqvae_st_train.hdf5",
-            k_file="/data1/home/guangjie/Data/vim-2-gallant/myOrig/k_from_vqvae_st_train.hdf5", mean=mean, std=std,
-            fmri_key='rt', frame_idx=frame_idx, latent_key='ze', latent_idx=latent_idx)
+                subject), k_file="/data1/home/guangjie/Data/vim-2-gallant/myOrig/k_from_vqvae_st_train.hdf5",
+            fmri_key='rt', frame_idx=frame_idx, latence_idx=latent_idx)
         dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=num_workers)
 
-        test_dataset = fmri_vector_k_dataset(
+        test_dataset = fmri_k_dataset(
             fmri_file="/data1/home/guangjie/Data/vim-2-gallant/myOrig/VoxelResponses_subject{}_v1234_rt_test.hdf5".format(
-                subject), latent_file="/data1/home/guangjie/Data/vim-2-gallant/myOrig/ze_from_vqvae_st_test.hdf5",
-            k_file="/data1/home/guangjie/Data/vim-2-gallant/myOrig/k_from_vqvae_st_test.hdf5", mean=mean,
-            std=std, fmri_key='rt', frame_idx=frame_idx, latent_key='ze', latent_idx=latent_idx)
+                subject), k_file="/data1/home/guangjie/Data/vim-2-gallant/myOrig/k_from_vqvae_st_test.hdf5",
+            fmri_key='rt', frame_idx=frame_idx, latence_idx=latent_idx)
         test_dataloader = DataLoader(test_dataset, batch_size=batch_size, shuffle=True, num_workers=num_workers)
+
+        # dataset = fmri_vector_k_dataset(
+        #     fmri_file="/data1/home/guangjie/Data/vim-2-gallant/myOrig/VoxelResponses_subject{}_v1234_rt_train.hdf5".format(
+        #         subject), latent_file="/data1/home/guangjie/Data/vim-2-gallant/myOrig/ze_from_vqvae_st_train.hdf5",
+        #     k_file="/data1/home/guangjie/Data/vim-2-gallant/myOrig/k_from_vqvae_st_train.hdf5", mean=mean, std=std,
+        #     fmri_key='rt', frame_idx=frame_idx, latent_key='ze', latent_idx=latent_idx)
+        # dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=num_workers)
+        #
+        # test_dataset = fmri_vector_k_dataset(
+        #     fmri_file="/data1/home/guangjie/Data/vim-2-gallant/myOrig/VoxelResponses_subject{}_v1234_rt_test.hdf5".format(
+        #         subject), latent_file="/data1/home/guangjie/Data/vim-2-gallant/myOrig/ze_from_vqvae_st_test.hdf5",
+        #     k_file="/data1/home/guangjie/Data/vim-2-gallant/myOrig/k_from_vqvae_st_test.hdf5", mean=mean,
+        #     std=std, fmri_key='rt', frame_idx=frame_idx, latent_key='ze', latent_idx=latent_idx)
+        # test_dataloader = DataLoader(test_dataset, batch_size=batch_size, shuffle=True, num_workers=num_workers)
         train_global_idx = np.array([0])
         test_global_idx = np.array([0])
 
@@ -356,12 +362,12 @@ def apply_regression_to_fmri(dt_key, frame_idx, subject=1, n_lantent=1024, model
     #     "/data1/home/guangjie/Data/vim-2-gallant/myOrig/VoxelResponses_subject1_v1234_rt_rv_rva0.hdf5",
     #     'rt')  # todo 归一化方式
     mean, std = None, None
-    dataset = fmri_dataset(
-        "/data1/home/guangjie/Data/vim-2-gallant/myOrig/VoxelResponses_subject1_v1234_rt_{}.hdf5".format(
-            'train' if dt_key == 'rt' else 'test'), mean, std, 'rt')  # todo train test
     # dataset = fmri_dataset(
-    #     "/data1/home/guangjie/Data/vim-2-gallant/myOrig/VoxelResponses_subject1_v1234_rt_rv_rva0.hdf5",
-    #     mean, std, dt_key)  # todo
+    #     "/data1/home/guangjie/Data/vim-2-gallant/myOrig/VoxelResponses_subject1_v1234_rt_{}.hdf5".format(
+    #         'train' if dt_key == 'rt' else 'test'), mean, std, 'rt')  # todo train test
+    dataset = fmri_dataset(
+        "/data1/home/guangjie/Data/vim-2-gallant/myOrig/VoxelResponses_subject1_v1234_rt_rv_rva0.hdf5",
+        mean, std, dt_key)  # todo
     dataloader = DataLoader(dataset, batch_size=128, shuffle=False, num_workers=0)
 
     for latent_idx in range(n_lantent):
@@ -405,14 +411,14 @@ def train_all_frame(viz, i_dim, o_dim, lr, weight_decay, init_weights, epochs, l
     #                'r') as ebdf:
     #     embeds = ebdf['embeds'][:]
     # mean, std = get_vim2_fmri_mean_std(
-    #     "/data1/home/guangjie/Data/vim-2-gallant/myOrig/VoxelResponses_subject1_v1234_rt_rv_rva0.hdf5", dt_key='rt')
+    #     "/data1/home/guangjie/Data/vim-2-gallant/myOrig/VoxelResponses_subject1_v1234_rt_train.hdf5", dt_key='rt')
     mean, std = None, None
     # o_mean,o_std = get_vector_mean_std()
     # cuda:3 [12, 13, 14]
     for frame_idx in [0]:
         print('{} frame begin:'.format(frame_idx))
         train_one_frame(viz, model, init_weights, criterion, optimiser, mean, std, epochs, logIterval,
-                        drawline=True, frame_idx=frame_idx, batch_size=64, num_workers=0, i_dim=i_dim, o_dim=o_dim,
+                        drawline=False, frame_idx=frame_idx, batch_size=64, num_workers=0, i_dim=i_dim, o_dim=o_dim,
                         n_lantent=1024, subject=1)
     print('end')
 
@@ -491,9 +497,9 @@ if __name__ == '__main__':
     assert viz.check_connection(timeout_seconds=3)
     torch.manual_seed(7)
 
-    lr = 0.001  # best:0.2
-    weight_decay = 1e-5  # best:0.01 todo 调整此参数，改变test loss 随train loss 下降的程度
-    epochs = 170  # best:200 50
+    lr = 0.05  # best:0.2
+    weight_decay = 1e-8  # best:0.01 todo 调整此参数，改变test loss 随train loss 下降的程度
+    epochs = 50  # best:200 50
     logIterval = 30
     subject = 1
     i_dim = 4917
@@ -503,9 +509,9 @@ if __name__ == '__main__':
     # show_regression_performance_all()
     # for i in range(1024):
     # show_regression_performance(model_in_dim=i_dim, model_out_dim=o_dim, frame_idx=0, latent_idx=0)
-    train_all_frame(viz, i_dim, o_dim, lr, weight_decay, init_weights, epochs, logIterval)
-    # apply_regression_to_fmri('rv', frame_idx=0, subject=1, n_lantent=1024, model_in_dim=4917, model_out_dim=128,
-    #                          dim_lantent=128)
+    # train_all_frame(viz, i_dim, o_dim, lr, weight_decay, init_weights, epochs, logIterval)
+    apply_regression_to_fmri('rv', frame_idx=1, subject=1, n_lantent=1024, model_in_dim=4917, model_out_dim=128,
+                             dim_lantent=128)
 
     # viz.close()
     # for ep in range(epochs):
