@@ -3,6 +3,7 @@ import tensorflow as tf
 import numpy as np
 from visdom import Visdom
 import time
+import json
 
 
 def show_z_flow(viz, time_step=15):
@@ -73,7 +74,7 @@ def show_rec_one_frame(viz, dt_key, frame_idx, use_k, time_step=15):
                 grid = np.array([ori, rec])
                 viz.images(grid, win=win, opts={'title': 'ori vs rec'})
                 print(i)
-                time.sleep(1)
+                time.sleep(0.5)
 
 
 def show_gen_k_heatmap(dt_key, frame_idx=0, time_step=15):
@@ -96,13 +97,76 @@ def show_gen_k_heatmap(dt_key, frame_idx=0, time_step=15):
                     print(np.mean(diff))
 
 
+def test_window_callback(viz):
+    txt = 'This is a write demo notepad. Type below. Delete clears text:<br>'
+    callback_text_window = viz.text(txt)
+    viz.a = 1
+
+    def type_callback(event):
+        if event['event_type'] == 'KeyPress':
+            viz.a += 1
+            curr_txt = str(viz.a)
+            # curr_txt = event['pane_data']['content']
+            viz.line(Y=np.zeros((7200,)), X=np.arange(0, 7200),
+                     opts=dict(width=1680, height=300, title='voxel Number'))
+            if event['key'] == 'Enter':
+                curr_txt += '<br>'
+            elif event['key'] == 'Backspace':
+                curr_txt = curr_txt[:-1]
+            elif event['key'] == 'Delete':
+                curr_txt = txt
+            elif len(event['key']) == 1:
+                curr_txt += event['key']
+            viz.text(curr_txt, win=callback_text_window)
+
+    viz.register_event_handler(type_callback, callback_text_window)
+
+
+def visualize_and_select_voxels(viz):
+    # voxel_win = viz.line(Y=np.zeros((7200,)), X=np.arange(0, 7200),
+    #                      opts=dict(width=1680, height=300))
+    with h5py.File("/data1/home/guangjie/Data/vim-2-gallant/myOrig/VoxelResponses_subject1_v1234_rt.hdf5", 'r') as rtf:
+        viz.rt = rtf['rt'][:]
+
+    viz.current_voxel = 0
+    viz.voxel_length = viz.rt.shape[0]
+    viz.select_voxel = []
+    voxel_win = viz.line(Y=viz.rt[viz.current_voxel], X=np.arange(0, 7200),
+                         opts=dict(width=1600, height=300, title='voxel'))
+    callbackwin = viz.text('Voxel Number {}'.format(viz.current_voxel))
+
+    def type_callback(event):
+        # global rt, current_voxel, voxel_win, voxel_length, viz, select_voxel
+        if event['event_type'] == 'KeyPress':
+            if event['key'] == 'ArrowDown' or event['key'] == 'Delete':
+                if event['key'] == 'ArrowDown':
+                    viz.select_voxel.append(viz.current_voxel)
+                    viz.current_voxel += 1
+                elif event['key'] == 'Delete':
+                    viz.current_voxel += 1
+
+                if viz.current_voxel < viz.voxel_length:
+                    viz.line(Y=viz.rt[viz.current_voxel], X=np.arange(0, 7200), win=voxel_win, update='replace',
+                             opts=dict(width=1650, height=300, title='voxel Number {}'.format(viz.current_voxel)))
+                    viz.text('voxel Number {}'.format(viz.current_voxel), win=callbackwin)
+                else:
+                    with open("selectVoxel.json", 'w') as fp:
+                        json.dump(list(viz.select_voxel), fp)
+                    viz.clear_event_handlers(voxel_win)
+
+    viz.register_event_handler(type_callback, callbackwin)
+    # a = input()
+
+
 if __name__ == '__main__':
-    viz = Visdom(server="http://localhost", env='visualize')
+    viz = Visdom(server="http://localhost", env='visualizeTest')
     assert viz.check_connection(timeout_seconds=3)
 
     # testHeatmap(viz)
     # show_z_flow(viz)
-    show_rec_one_frame(viz, 'rt', frame_idx=1, use_k=False)
+    # test_window_callback(viz)
+    visualize_and_select_voxels(viz)
+    # show_rec_one_frame(viz, 'rt', frame_idx=1, use_k=True)
     # show_gen_k_heatmap('rv')
     # _Y = np.linspace(-5, 5, 100)
     # Y = np.column_stack((_Y * _Y, np.sqrt(_Y + 5)))
@@ -113,5 +177,7 @@ if __name__ == '__main__':
     #     opts=dict(markers=False),
     # )
 
+    #############################################
+    a = input()
     print('end')
-    viz.close()
+    # viz.close()

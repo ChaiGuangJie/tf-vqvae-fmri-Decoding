@@ -44,9 +44,12 @@ class vqvae_zq_dataset(Dataset):
 
 
 class vqvae_k_dataset(Dataset):
-    def __init__(self, kfile, frame_idx, time_step):
+    def __init__(self, kfile, frame_idx=None, time_step=15):
         kf = h5py.File(kfile, 'r')
-        self.k = kf['k'][frame_idx::time_step].reshape(-1, 1024).astype(np.float32)
+        if not frame_idx:
+            self.k = kf['k'][:]  # .reshape(-1, 1024).astype(np.float32)
+        else:
+            self.k = kf['k'][frame_idx::time_step]
 
     def __getitem__(self, item):
         return self.k[item]
@@ -66,8 +69,8 @@ class fmri_k_dataset(Dataset):
 
     def __getitem__(self, item):
         fmri = self.resp[:, item]
-        vector = self.k[item, self.latence_idx]  # / 512  # , self.row
-        return fmri, vector
+        k = self.k[item, self.latence_idx]  # / 512  # , self.row
+        return fmri, k
 
     def __len__(self):
         return self.resp.shape[-1]
@@ -205,6 +208,28 @@ class fmri_dataset(Dataset):
         return self.resp.shape[-1]
 
 
+class fmri_fmap_dataset(Dataset):
+    def __init__(self, fmri_file, k_file, embeds_file, fmri_key, frame_idx, fmap_idx, time_step=15):
+        fmrif = h5py.File(fmri_file, 'r')
+        self.resp = fmrif[fmri_key][:]
+        kf = h5py.File(k_file, 'r')
+        self.k = kf['k'][frame_idx::time_step].reshape(-1, 1024).astype(np.int64)
+        embedf = h5py.File(embeds_file, 'r')
+        self.embeds = embedf['embeds'][:]
+        self.frame_idx = frame_idx
+        self.fmap_idx = fmap_idx
+        self.time_step = time_step
+
+    def __getitem__(self, item):
+        fmri = self.resp[:, item]
+        k = self.k[item]
+        fmap = self.embeds[k][:, self.fmap_idx]
+        return fmri, fmap
+
+    def __len__(self):
+        return self.resp.shape[-1]
+
+
 def get_vim2_fmri_mean_std(voxel_train_file, dt_key):
     with h5py.File(voxel_train_file, 'r') as vf:
         r = vf[dt_key][:].flatten()  # todo 需要test数据的mean，std vf[dt_key][roi_idx, :].flatten()
@@ -213,7 +238,11 @@ def get_vim2_fmri_mean_std(voxel_train_file, dt_key):
         std = np.std(r)
     return mean, std
 
+
 # def get_latent_mean_std(latent_train_file):
 #     with h5py.File(latent_train_file, 'r') as f:
 #         latent = f['latent'][:].flatten()
 #         latent = np.mean
+
+if __name__ == '__main__':
+    pass
