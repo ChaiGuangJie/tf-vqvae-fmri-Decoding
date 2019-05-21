@@ -2,15 +2,20 @@ import torch
 from torch.utils.data import Dataset, DataLoader
 import h5py
 import numpy as np
+import scipy.io as sio
 
 
-class Vim2_Stimuli_Dataset(Dataset):
-    def __init__(self, file, dt_key):
+class Stimuli_Dataset(Dataset):
+    def __init__(self, file, dt_key, transpose=True):
         f = h5py.File(file, 'r')
         self.dt = f[dt_key]  # shape = (108000,3,128,128)
+        self.transpose = transpose
 
     def __getitem__(self, item):
-        data = self.dt[item].transpose((2, 1, 0)) / 255.0
+        if self.transpose:
+            data = self.dt[item].transpose((2, 1, 0)) / 255.0
+        else:
+            data = self.dt[item] / 225.0
         return data
 
     def __len__(self):
@@ -230,6 +235,28 @@ class fmri_fmap_dataset(Dataset):
         return self.resp.shape[-1]
 
 
+class fmri_fmap_slice_dataset(Dataset):
+    def __init__(self, fmri_file, k_file, embeds_file, fmri_key, frame_idx, fmap_idx, slice_idx, time_step=15):
+        fmrif = h5py.File(fmri_file, 'r')
+        self.resp = fmrif[fmri_key][:]
+        kf = h5py.File(k_file, 'r')
+        self.k = kf['k'][frame_idx::time_step, slice_idx, :].astype(np.int64)
+        embedf = h5py.File(embeds_file, 'r')
+        self.embeds = embedf['embeds'][:]  # shape = (512,128)
+        # self.frame_idx = frame_idx
+        self.fmap_idx = fmap_idx
+        # self.time_step = time_step
+
+    def __getitem__(self, item):
+        fmri = self.resp[:, item]
+        k = self.k[item]
+        feat_slice_map = self.embeds[k][:, self.fmap_idx]
+        return fmri, feat_slice_map
+
+    def __len__(self):
+        return self.resp.shape[-1]
+
+
 def get_vim2_fmri_mean_std(voxel_train_file, dt_key):
     with h5py.File(voxel_train_file, 'r') as vf:
         r = vf[dt_key][:].flatten()  # todo 需要test数据的mean，std vf[dt_key][roi_idx, :].flatten()
@@ -237,6 +264,41 @@ def get_vim2_fmri_mean_std(voxel_train_file, dt_key):
         mean = np.mean(r)
         std = np.std(r)
     return mean, std
+
+
+def get_purdue_fmri_mean_std(voxel_train_file, dt_key):
+    with h5py.File(voxel_train_file, 'r') as f:
+        r = f[dt_key][:].flatten()
+        r = np.nan_to_num(r)
+        mean = np.mean(r)
+        std = np.std(r)
+    return mean, std
+
+
+class purdue_fmri_fmap_dataset(Dataset):
+    def __init__(self, fmri_file, k_file, embeds_file, fmri_key, frame_idx, fmap_idx, mean=None, std=None):
+        fmrif = h5py.File(fmri_file, 'r')
+        # self.fmri = fmrif[fmri_key][:]
+        if not mean or not std:
+            self.response = fmrif[fmri_key][:]
+        else:
+            self.response = (fmrif[fmri_key][:] - mean) / std  # todo 这样可以？
+        kf = h5py.File(k_file, 'r')
+        self.k = kf['k'][:].reshape(-1, 1024).astype(np.int64)
+        embedf = h5py.File(embeds_file, 'r')
+        self.embeds = embedf['embeds'][:]
+
+        self.frame_idx = frame_idx
+        self.fmap_idx = fmap_idx
+
+    def __getitem__(self, item):
+        fmri = self.response[:, item]
+        k = self.k[item]
+        fmap = self.embeds[k][:, self.fmap_idx]
+        return fmri, fmap  # todo nan
+
+    def __len__(self):
+        return self.response.shape[-1]
 
 
 # def get_latent_mean_std(latent_train_file):

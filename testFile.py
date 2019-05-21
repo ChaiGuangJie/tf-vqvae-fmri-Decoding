@@ -40,7 +40,7 @@ def save_weight_to_file(weightArr):
 
 
 def generate_reduced_weight(all):
-    weightArr = np.where(all < 0.0002, 1, 0)
+    weightArr = np.where(all < 0.0005, 1, 0)
     weightArr = [int(i) for i in list(weightArr)]
     return weightArr
 

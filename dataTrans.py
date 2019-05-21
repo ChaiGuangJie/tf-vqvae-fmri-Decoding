@@ -1,6 +1,6 @@
 import h5py
 import tensorflow as tf
-from MyDataset import vqvae_ze_dataset, vqvae_ze_dataset, Vim2_Stimuli_Dataset, vqvae_zq_dataset, vqvae_k_dataset
+from MyDataset import vqvae_ze_dataset, vqvae_ze_dataset, Stimuli_Dataset, vqvae_zq_dataset, vqvae_k_dataset
 from torch.utils.data import DataLoader
 from model import VQVAE, _imagenet_arch
 import numpy as np
@@ -55,24 +55,25 @@ def concatenate_ze(dt_key, frame_idx, n_lantent=1024):
             print(j)
 
 
-def concatenate_fmaps(dt_key, frame_idx, subject=1, n_fmaps=128):
+def concatenate_fmaps(dt_key, frame_idx, rootDir, subject=1, n_fmaps=128):
     fmaps = []
     for i in range(n_fmaps):
-        with h5py.File(
-                "/data1/home/guangjie/Data/vim-2-gallant/regressed_zq_of_vqvae_by_feature_map/subject_{}/{}/frame_{}/subject_{}_frame_{}_ze_fmap_{}.hdf5".format(
-                    subject, dt_key, frame_idx, subject, frame_idx, i), 'r') as rf:
+        # /data1/home/guangjie/Data/vim-2-gallant/
+        with h5py.File(os.path.join(rootDir,
+                                    "regressed_zq_of_vqvae_by_feature_map/subject_{}/{}/frame_{}/subject_{}_frame_{}_zq_fmap_{}.hdf5".format(
+                                        subject, dt_key, frame_idx, subject, frame_idx, i)), 'r') as rf:
             fmap = rf['fmap'][:]
             fmaps.append(fmap[:, :, np.newaxis])
     fmaps = np.concatenate(fmaps, axis=2)
-    with h5py.File(
-            "/data1/home/guangjie/Data/vim-2-gallant/regressed_zq_of_vqvae_by_feature_map/subject_{}/{}/frame_{}/subject_{}_frame_{}_ze_fmap_all.hdf5".format(
-                subject, dt_key, frame_idx, subject, frame_idx), 'w') as wf:
+    with h5py.File(os.path.join(rootDir,
+                                "regressed_zq_of_vqvae_by_feature_map/subject_{}/{}/frame_{}/subject_{}_frame_{}_ze_fmap_all.hdf5".format(
+                                    subject, dt_key, frame_idx, subject, frame_idx)), 'w') as wf:
         wf.create_dataset('latent', data=fmaps)
 
 
-def rec_a_frame_img_from_ze(dt_key, frame_idx, subject=1):
-    save_dir = "/data1/home/guangjie/Data/vim-2-gallant/rec_by_ze_of_vqvae/subject1/{}/frame_{}".format(
-        dt_key, frame_idx)
+def rec_a_frame_img_from_ze(dt_key, frame_idx, rootDir, subject=1):
+    save_dir = os.path.join(rootDir, "rec_by_ze_of_vqvae/subject1/{}/frame_{}".format(
+        dt_key, frame_idx))
     os.makedirs(save_dir, exist_ok=True)
     MODEL, K, D = ('models/imagenet/last.ckpt', 512, 128)
     with tf.variable_scope('net'):
@@ -94,8 +95,9 @@ def rec_a_frame_img_from_ze(dt_key, frame_idx, subject=1):
     #     "/data1/home/guangjie/Data/vim-2-gallant/regressed_ze_of_vqvae/subject_1/{}/frame_{}/subject_1_frame_{}_ze_latent_all.hdf5".format(
     #         dt_key, frame_idx, frame_idx))  # todo latent?
     dataset = vqvae_ze_dataset(
-        "/data1/home/guangjie/Data/vim-2-gallant/regressed_zq_of_vqvae_by_feature_map/subject_{}/{}/frame_{}/subject_{}_frame_{}_ze_fmap_all.hdf5".format(
-            subject, dt_key, frame_idx, subject, frame_idx))
+        os.path.join(rootDir,
+                     "regressed_zq_of_vqvae_by_feature_map/subject_{}/{}/frame_{}/subject_{}_frame_{}_ze_fmap_all.hdf5".format(
+                         subject, dt_key, frame_idx, subject, frame_idx)))
     # dataset = vqvae_zq_dataset("/data1/home/guangjie/Data/vim-2-gallant/myOrig/zq_from_vqvae_sv.hdf5")
     dataloader = DataLoader(dataset, batch_size=10, shuffle=False, num_workers=0)
 
@@ -209,7 +211,7 @@ def extract_zq_from_vqvae(dt_key):
     sess.run(init_op)
     net.load(sess, MODEL)
 
-    dataset = Vim2_Stimuli_Dataset("/data1/home/guangjie/Data/vim-2-gallant/orig/Stimuli.mat", dt_key)
+    dataset = Stimuli_Dataset("/data1/home/guangjie/Data/vim-2-gallant/orig/Stimuli.mat", dt_key)
     dataloader = DataLoader(dataset, batch_size=10, shuffle=False, num_workers=1)
 
     with h5py.File("/data1/home/guangjie/Data/vim-2-gallant/myOrig/zq_from_vqvae_{}.hdf5".format(dt_key), 'w') as sf:
@@ -221,6 +223,46 @@ def extract_zq_from_vqvae(dt_key):
             zq_dataset[begin_idx:end_idx] = zq
             begin_idx = end_idx
             print(step)
+
+
+def extract_k_rec_from_vqvae(dt_key, frame_idx):
+    MODEL, K, D = ('models/imagenet/last.ckpt', 512, 128)
+    with tf.variable_scope('net'):
+        with tf.variable_scope('params') as params:
+            pass
+        x = tf.placeholder(tf.float32, [None, 128, 128, 3])
+        net = VQVAE(None, None, 0.25, x, K, D, _imagenet_arch, params, False)
+
+    init_op = tf.group(tf.global_variables_initializer(),
+                       tf.local_variables_initializer())
+    config = tf.ConfigProto()
+    config.gpu_options.allow_growth = True
+    sess = tf.Session(config=config)
+    sess.graph.finalize()
+    sess.run(init_op)
+    net.load(sess, MODEL)
+
+    dataset = Stimuli_Dataset(
+        "/data1/home/guangjie/Data/purdue/exprimentData/Stimuli/Stimuli_{}_frame_{}.hdf5".format(
+            'train' if dt_key == 'st' else 'test', frame_idx), dt_key, transpose=False)
+    dataloader = DataLoader(dataset, batch_size=10, shuffle=False, num_workers=1)
+
+    with h5py.File(
+            "/data1/home/guangjie/Data/purdue/exprimentData/extract_from_vqvae/rec_from_vqvae_{}_frame_{}.hdf5".format(
+                dt_key, frame_idx), 'w') as recf:
+        rec_dataset = recf.create_dataset('rec', shape=(len(dataset), 128, 128, 3))
+        with h5py.File(
+                "/data1/home/guangjie/Data/purdue/exprimentData/extract_from_vqvae/k_from_vqvae_{}_frame_{}.hdf5".format(
+                    dt_key, frame_idx), 'w') as kf:
+            k_dataset = kf.create_dataset('k', shape=(len(dataset), 32, 32))
+            begin_idx = 0
+            for step, data in enumerate(dataloader):
+                k, rec = sess.run((net.k, net.p_x_z), feed_dict={x: data})
+                end_idx = begin_idx + len(rec)
+                rec_dataset[begin_idx:end_idx] = rec
+                k_dataset[begin_idx:end_idx] = k
+                begin_idx = end_idx
+                print(step)
 
 
 def split_rt_to_train_test():
@@ -267,7 +309,7 @@ def build_zq_from_k_embeds(k_file, embeds_file, save_file):
 
 def use_weighted_norm2_to_find_k(dt_key, frame_idx, subject):
     with open("testlosslog/weight.json", 'r') as fp:
-        weight = torch.as_tensor(json.load(fp)['weight'],dtype=torch.float).cuda()
+        weight = torch.as_tensor(json.load(fp)['weight'], dtype=torch.float).cuda()
         with h5py.File("/data1/home/guangjie/Data/vim-2-gallant/myOrig/imagenet128_embeds_from_vqvae.hdf5",
                        'r') as ebdf:
             embeds = torch.as_tensor(ebdf['embeds'][:]).cuda()
@@ -295,9 +337,9 @@ def use_weighted_norm2_to_find_k(dt_key, frame_idx, subject):
 
 if __name__ == '__main__':
     # extract_k(file="/data1/home/guangjie/Data/vim-2-gallant/myOrig/ze_embeds_from_vqvae_st.hdf5")
-    # concatenate_fmaps('rt', frame_idx=1)
-    # concatenate_ze('rv', frame_idx=0)
-    # rec_a_frame_img_from_ze('rt', frame_idx=1)
+    concatenate_fmaps('rv', frame_idx=0, rootDir="/data1/home/guangjie/Data/purdue/exprimentData/")
+    # concatenate_ze('rt', frame_idx=0)
+    rec_a_frame_img_from_ze('rv', frame_idx=0, rootDir="/data1/home/guangjie/Data/purdue/exprimentData/")
     # rec_a_frame_img_from_zq('rt', frame_idx=0, subject=1)
     # extract_zq_from_vqvae('st')
     # split_rt_to_train_test()
@@ -307,6 +349,9 @@ if __name__ == '__main__':
     #     k_file="/data1/home/guangjie/Data/vim-2-gallant/regressed_k_of_vqvae/subject_1/rt/frame_0_regressed_k.hdf5",
     #     embeds_file="/data1/home/guangjie/Data/vim-2-gallant/myOrig/imagenet128_embeds_from_vqvae.hdf5",
     #     save_file="/data1/home/guangjie/Data/vim-2-gallant/regressed_k_of_vqvae/subject_1/rt/frame_0_regressed_zq.hdf5")
-    use_weighted_norm2_to_find_k('rv', frame_idx=1, subject=1)
-    rec_a_frame_img_from_k('rv', frame_idx=1, subject=1)
+
+    # use_weighted_norm2_to_find_k('rv', frame_idx=1, subject=1)
+    # rec_a_frame_img_from_k('rv', frame_idx=1, subject=1)
+
+    # extract_k_rec_from_vqvae('sv', frame_idx=0)
     print('end')

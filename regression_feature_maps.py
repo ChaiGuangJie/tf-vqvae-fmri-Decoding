@@ -11,7 +11,7 @@ import json
 os.environ["CUDA_VISIBLE_DEVICES"] = "3"
 
 with h5py.File("/data1/home/guangjie/Data/vim-2-gallant/myOrig/imagenet128_embeds_from_vqvae.hdf5", 'r') as ebf:
-    embeds = torch.from_numpy(ebf['embeds'][:] * 10).cuda()
+    embeds = torch.from_numpy(ebf['embeds'][:]).cuda()
 
 normal_criterion = nn.MSELoss()
 
