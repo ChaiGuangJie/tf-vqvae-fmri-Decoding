@@ -63,10 +63,22 @@ class vqvae_k_dataset(Dataset):
         return self.k.shape[0]
 
 
+class vqvae_one_frame_k_dataset(Dataset):
+    def __init__(self, kfile):
+        kf = h5py.File(kfile, 'r')
+        self.k = kf['k'][:]
+
+    def __getitem__(self, item):
+        return self.k[item]
+
+    def __len__(self):
+        return self.k.shape[0]
+
+
 class fmri_k_dataset(Dataset):
     def __init__(self, fmri_file, k_file, fmri_key, frame_idx, latence_idx, time_step=15):
         fmrif = h5py.File(fmri_file, 'r')
-        self.resp = fmrif[fmri_key][:]
+        self.resp = np.nan_to_num(fmrif[fmri_key][:])
         kf = h5py.File(k_file, 'r')
         self.k = kf['k'][frame_idx::time_step].reshape(-1, 1024).astype(np.int64)
         self.latence_idx = latence_idx
@@ -213,6 +225,36 @@ class fmri_dataset(Dataset):
         return self.resp.shape[-1]
 
 
+class fmri_fpoint_dataset(Dataset):
+    def __init__(self, fmri_file, k_file, embeds_file, fmri_key, frame_idx, fpoint_idx, mean=None, std=None,
+                 time_step=15):
+        fmrif = h5py.File(fmri_file, 'r')
+        if not mean or not std:
+            self.resp = fmrif[fmri_key][:]
+        else:
+            self.resp = (fmrif[fmri_key][:] - mean) / std  # todo 这样可以？
+
+        kf = h5py.File(k_file, 'r')
+        row_column = fpoint_idx / 128  # todo 会自动类型转换？ 用//替换
+        self.latent_idx = fpoint_idx % 128
+        row = row_column / 32
+        column = row_column % 32
+        self.k = kf['k'][frame_idx::time_step, row, column].astype(np.int64)
+        embedf = h5py.File(embeds_file, 'r')
+        self.embeds = embedf['embeds'][:]
+        self.frame_idx = frame_idx
+        self.time_step = time_step
+
+    def __getitem__(self, item):
+        fmri = self.resp[:, item]
+        k = self.k[item]
+        fpoint = self.embeds[k, self.latent_idx]
+        return fmri, fpoint
+
+    def __len__(self):
+        return self.resp.shape[-1]
+
+
 class fmri_fmap_dataset(Dataset):
     def __init__(self, fmri_file, k_file, embeds_file, fmri_key, frame_idx, fmap_idx, time_step=15):
         fmrif = h5py.File(fmri_file, 'r')
@@ -240,7 +282,7 @@ class fmri_fmap_slice_dataset(Dataset):
         fmrif = h5py.File(fmri_file, 'r')
         self.resp = fmrif[fmri_key][:]
         kf = h5py.File(k_file, 'r')
-        self.k = kf['k'][frame_idx::time_step, slice_idx, :].astype(np.int64)
+        self.k = kf['k'][frame_idx::time_step, slice_idx, :].astype(np.int64)  # [frame_idx::time_step, :, slice_idx]
         embedf = h5py.File(embeds_file, 'r')
         self.embeds = embedf['embeds'][:]  # shape = (512,128)
         # self.frame_idx = frame_idx
@@ -299,6 +341,40 @@ class purdue_fmri_fmap_dataset(Dataset):
 
     def __len__(self):
         return self.response.shape[-1]
+
+
+class vim2_predict_and_true_k_dataset(Dataset):
+    def __init__(self, predict_latent_file, k_file, frame_idx, latent_idx, time_step=15):
+        predict_f = h5py.File(predict_latent_file, 'r')
+        self.predict_latent = predict_f['latent'][:].reshape(-1, 1024, 128)  # shape = (len,32,32,128)
+        kf = h5py.File(k_file, 'r')
+        self.k = kf['k'][frame_idx::time_step].reshape(-1, 1024).astype(np.int64)
+        self.latent_idx = latent_idx
+        assert len(self.predict_latent) == len(self.k)
+
+    def __getitem__(self, item):
+        latent = self.predict_latent[item, self.latent_idx, :]
+        k = self.k[item, self.latent_idx]
+        return latent, k
+
+    def __len__(self):
+        return len(self.predict_latent)
+
+
+class vim2_predict_latent_dataset(Dataset):
+    def __init__(self, predict_latent_file, latent_idx):
+        predict_f = h5py.File(predict_latent_file, 'r')
+        self.predict_latent = predict_f['latent'][:]  # .reshape(-1, 1024, 128)  # shape = (len,32,32,128)
+        # self.latent_idx = latent_idx
+        self.row = latent_idx // 32
+        self.col = latent_idx % 32
+
+    def __getitem__(self, item):
+        latent = self.predict_latent[item, self.row, self.col, :]
+        return latent
+
+    def __len__(self):
+        return len(self.predict_latent)
 
 
 # def get_latent_mean_std(latent_train_file):

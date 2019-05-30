@@ -1,6 +1,6 @@
 import h5py
 import tensorflow as tf
-from MyDataset import vqvae_ze_dataset, vqvae_ze_dataset, Stimuli_Dataset, vqvae_zq_dataset, vqvae_k_dataset
+from MyDataset import vqvae_ze_dataset, Stimuli_Dataset, vqvae_zq_dataset, vqvae_k_dataset, vqvae_one_frame_k_dataset
 from torch.utils.data import DataLoader
 from model import VQVAE, _imagenet_arch
 import numpy as np
@@ -71,8 +71,9 @@ def concatenate_fmaps(dt_key, frame_idx, rootDir, subject=1, n_fmaps=128):
         wf.create_dataset('latent', data=fmaps)
 
 
-def rec_a_frame_img_from_ze(dt_key, frame_idx, rootDir, subject=1):
-    save_dir = os.path.join(rootDir, "rec_by_ze_of_vqvae/subject1/{}/frame_{}".format(
+def rec_a_frame_img_from_ze(dt_key, frame_idx, latentRootDir, saveRootDir, postfix, subject=1):
+    os.makedirs(latentRootDir, exist_ok=True)
+    save_dir = os.path.join(saveRootDir, "subject1/{}/frame_{}".format(
         dt_key, frame_idx))
     os.makedirs(save_dir, exist_ok=True)
     MODEL, K, D = ('models/imagenet/last.ckpt', 512, 128)
@@ -95,9 +96,8 @@ def rec_a_frame_img_from_ze(dt_key, frame_idx, rootDir, subject=1):
     #     "/data1/home/guangjie/Data/vim-2-gallant/regressed_ze_of_vqvae/subject_1/{}/frame_{}/subject_1_frame_{}_ze_latent_all.hdf5".format(
     #         dt_key, frame_idx, frame_idx))  # todo latent?
     dataset = vqvae_ze_dataset(
-        os.path.join(rootDir,
-                     "regressed_zq_of_vqvae_by_feature_map/subject_{}/{}/frame_{}/subject_{}_frame_{}_ze_fmap_all.hdf5".format(
-                         subject, dt_key, frame_idx, subject, frame_idx)))
+        os.path.join(latentRootDir, "subject_{}/{}/frame_{}/subject_{}_frame_{}_ze_{}_all.hdf5".format(
+            subject, dt_key, frame_idx, subject, frame_idx, postfix)))
     # dataset = vqvae_zq_dataset("/data1/home/guangjie/Data/vim-2-gallant/myOrig/zq_from_vqvae_sv.hdf5")
     dataloader = DataLoader(dataset, batch_size=10, shuffle=False, num_workers=0)
 
@@ -152,9 +152,10 @@ def rec_a_frame_img_from_zq(dt_key, frame_idx, subject=1):
             print(step)
 
 
-def rec_a_frame_img_from_k(dt_key, frame_idx, subject=1):
-    save_dir = "/data1/home/guangjie/Data/vim-2-gallant/rec_by_ze_of_vqvae/subject1/{}/frame_{}".format(
-        dt_key, frame_idx)
+def rec_a_frame_img_from_k(dt_key, frame_idx, save_dir, k_file, subject=1):
+    # save_dir = "/data1/home/guangjie/Data/vim-2-gallant/rec_by_ze_of_vqvae_use_k/subject1/{}/frame_{}".format(
+    #     dt_key, frame_idx)
+    save_dir = os.path.join(save_dir, "subject{}/{}/frame_{}".format(subject, dt_key, frame_idx))
     os.makedirs(save_dir, exist_ok=True)
     MODEL, K, D = ('models/imagenet/last.ckpt', 512, 128)
     with tf.variable_scope('net'):
@@ -176,12 +177,10 @@ def rec_a_frame_img_from_k(dt_key, frame_idx, subject=1):
     #     "/data1/home/guangjie/Data/vim-2-gallant/regressed_k_of_vqvae/subject_{}/{}/frame_{}_regressed_zq.hdf5".format(
     #         subject, dt_key, frame_idx))  # todo latent?
     # dataset = vqvae_zq_dataset("/data1/home/guangjie/Data/vim-2-gallant/myOrig/zq_from_vqvae_sv.hdf5")
-    dataset = vqvae_k_dataset(
-        kfile="/data1/home/guangjie/Data/vim-2-gallant/weighted_k/{}/subject_{}_frame_{}_{}_weighted_k.hdf5".format(
-            dt_key, subject, frame_idx, dt_key))
+    dataset = vqvae_one_frame_k_dataset(kfile=k_file)
     dataloader = DataLoader(dataset, batch_size=10, shuffle=False, num_workers=0)
 
-    with h5py.File(os.path.join(save_dir, "subject_{}_{}_frame_{}_rec_of_k.hdf5".format(subject, dt_key, frame_idx)),
+    with h5py.File(os.path.join(save_dir, "subject_{}_{}_frame_{}_rec.hdf5".format(subject, dt_key, frame_idx)),
                    'w') as sf:
         rec_dataset = sf.create_dataset('rec', shape=(len(dataset), 128, 128, 3), dtype=np.uint8)
         begin_idx = 0
@@ -307,16 +306,15 @@ def build_zq_from_k_embeds(k_file, embeds_file, save_file):
                     print(i)
 
 
-def use_weighted_norm2_to_find_k(dt_key, frame_idx, subject):
-    with open("testlosslog/weight.json", 'r') as fp:
+def use_weighted_norm2_to_find_k(dt_key, frame_idx, weight_file, fmap_root_dir, subject):
+    with open(weight_file, 'r') as fp:
         weight = torch.as_tensor(json.load(fp)['weight'], dtype=torch.float).cuda()
         with h5py.File("/data1/home/guangjie/Data/vim-2-gallant/myOrig/imagenet128_embeds_from_vqvae.hdf5",
                        'r') as ebdf:
             embeds = torch.as_tensor(ebdf['embeds'][:]).cuda()
             with h5py.File(
-                    "/data1/home/guangjie/Data/vim-2-gallant/regressed_zq_of_vqvae_by_feature_map/subject_{}/{}/frame_{}/subject_{}_frame_{}_ze_fmap_all.hdf5".format(
-                        subject, dt_key, frame_idx, subject, frame_idx),
-                    'r') as fmapf:
+                    os.path.join(fmap_root_dir, "subject_{}/{}/frame_{}/subject_{}_frame_{}_ze_fmap_all.hdf5".format(
+                        subject, dt_key, frame_idx, subject, frame_idx)), 'r') as fmapf:
                 latent_data = fmapf['latent']
                 ks = []
                 for i in range(latent_data.shape[0]):
@@ -337,9 +335,22 @@ def use_weighted_norm2_to_find_k(dt_key, frame_idx, subject):
 
 if __name__ == '__main__':
     # extract_k(file="/data1/home/guangjie/Data/vim-2-gallant/myOrig/ze_embeds_from_vqvae_st.hdf5")
-    concatenate_fmaps('rv', frame_idx=0, rootDir="/data1/home/guangjie/Data/purdue/exprimentData/")
+    # concatenate_fmaps('rv', frame_idx=0, rootDir="/data1/home/guangjie/Data/purdue/exprimentData/")
     # concatenate_ze('rt', frame_idx=0)
-    rec_a_frame_img_from_ze('rv', frame_idx=0, rootDir="/data1/home/guangjie/Data/purdue/exprimentData/")
+    # rec_a_frame_img_from_ze('rv', frame_idx=0, rootDir="/data1/home/guangjie/Data/purdue/exprimentData/")
+    # rec_a_frame_img_from_ze('rv', frame_idx=0,
+    #                         latentRootDir="/data1/home/guangjie/Data/vim-2-gallant/regressed_zq_of_vqvae_by_feature_map_slice/",
+    #                         saveRootDir="/data1/home/guangjie/Data/vim-2-gallant/rec_by_ze_of_vqvae_slice")
+    # rec_a_frame_img_from_ze('rt', frame_idx=0,
+    #                         latentRootDir="/data1/home/guangjie/Data/vim-2-gallant/regressed_zq_of_vqvae_by_feature_point",
+    #                         saveRootDir="/data1/home/guangjie/Data/vim-2-gallant/rec_by_ze_of_vqvae_point",
+    #                         postfix='fpoint')
+    rec_a_frame_img_from_k(dt_key='rv', frame_idx=0,
+                           save_dir="/data1/home/guangjie/Data/vim-2-gallant/rec_by_k_of_vqvae_fmap",
+                           k_file="/data1/home/guangjie/Data/vim-2-gallant/regressed_k_of_vqvae_by_weighted_fmap/subject_1/rv/frame_0/subject_1_frame_0_k_fpoint_all.hdf5")
+    # "/data1/home/guangjie/Data/vim-2-gallant/regressed_zq_of_vqvae_by_feature_latent/"
+    # "/data1/home/guangjie/Data/vim-2-gallant/regressed_zq_of_vqvae_by_feature_map/"
+    # "/data1/home/guangjie/Data/vim-2-gallant/rec_by_ze_of_vqvae_fmap"
     # rec_a_frame_img_from_zq('rt', frame_idx=0, subject=1)
     # extract_zq_from_vqvae('st')
     # split_rt_to_train_test()
@@ -350,8 +361,11 @@ if __name__ == '__main__':
     #     embeds_file="/data1/home/guangjie/Data/vim-2-gallant/myOrig/imagenet128_embeds_from_vqvae.hdf5",
     #     save_file="/data1/home/guangjie/Data/vim-2-gallant/regressed_k_of_vqvae/subject_1/rt/frame_0_regressed_zq.hdf5")
 
-    # use_weighted_norm2_to_find_k('rv', frame_idx=1, subject=1)
-    # rec_a_frame_img_from_k('rv', frame_idx=1, subject=1)
+    # use_weighted_norm2_to_find_k('rv', frame_idx=0,
+    #                              weight_file='/data1/home/guangjie/Project/python/tf-vqvae/testlosslog/eval_loss/weight.json',
+    #                              fmap_root_dir="/data1/home/guangjie/Data/vim-2-gallant/regressed_zq_of_vqvae_by_feature_map",
+    #                              subject=1)
+    # rec_a_frame_img_from_k('rv', frame_idx=0, subject=1)
 
     # extract_k_rec_from_vqvae('sv', frame_idx=0)
     print('end')
