@@ -277,6 +277,41 @@ class fmri_fmap_dataset(Dataset):
         return self.resp.shape[-1]
 
 
+class fmri_fmap_all_k_dataset(Dataset):
+    def __init__(self, fmri_file, k_file, embeds_file, fmri_key,dt_key, frame_idx, fmap_idx, sample_interval=36,
+                 time_step=15):
+        fmrif = h5py.File(fmri_file, 'r')
+        self.resp = fmrif[fmri_key][:]
+        kf = h5py.File(k_file, 'r')
+        st_idx = np.sort(np.array(range(frame_idx, 108000, time_step)))
+        st_per_frame_idx = set(range(7200))
+        st_test_idx = set(range(0, 7200, sample_interval))
+        st_train_idx = st_per_frame_idx - st_test_idx
+        st_train_idx = np.sort(np.array(list(st_train_idx)))
+        st_test_idx = np.sort(np.array(list(st_test_idx)))
+        if dt_key == 'rt':
+            idx = [st_idx[st_train_idx]][0]
+            self.k = kf['k'][:][idx].reshape(-1, 1024).astype(np.int64)
+        elif dt_key == 'rv':
+            idx = [st_idx[st_test_idx]][0]
+            self.k = kf['k'][:][idx].reshape(-1, 1024).astype(np.int64)
+        else:
+            raise AttributeError('dt_key error')
+        embedf = h5py.File(embeds_file, 'r')
+        self.embeds = embedf['embeds'][:]
+        self.frame_idx = frame_idx
+        self.fmap_idx = fmap_idx
+
+    def __getitem__(self, item):
+        fmri = self.resp[:, item]
+        k = self.k[item]
+        fmap = self.embeds[k][:, self.fmap_idx]
+        return fmri, fmap
+
+    def __len__(self):
+        return self.resp.shape[-1]
+
+
 class fmri_fmap_slice_dataset(Dataset):
     def __init__(self, fmri_file, k_file, embeds_file, fmri_key, frame_idx, fmap_idx, slice_idx, time_step=15):
         fmrif = h5py.File(fmri_file, 'r')
@@ -349,6 +384,24 @@ class vim2_predict_and_true_k_dataset(Dataset):
         self.predict_latent = predict_f['latent'][:].reshape(-1, 1024, 128)  # shape = (len,32,32,128)
         kf = h5py.File(k_file, 'r')
         self.k = kf['k'][frame_idx::time_step].reshape(-1, 1024).astype(np.int64)
+        self.latent_idx = latent_idx
+        assert len(self.predict_latent) == len(self.k)
+
+    def __getitem__(self, item):
+        latent = self.predict_latent[item, self.latent_idx, :]
+        k = self.k[item, self.latent_idx]
+        return latent, k
+
+    def __len__(self):
+        return len(self.predict_latent)
+
+
+class vim2_predict_and_all_true_k_dataset(Dataset):
+    def __init__(self, predict_latent_file, k_file, latent_idx):
+        predict_f = h5py.File(predict_latent_file, 'r')
+        self.predict_latent = predict_f['latent'][:].reshape(-1, 1024, 128)  # shape = (len,32,32,128)
+        kf = h5py.File(k_file, 'r')
+        self.k = kf['k'][:].reshape(-1, 1024).astype(np.int64)
         self.latent_idx = latent_idx
         assert len(self.predict_latent) == len(self.k)
 

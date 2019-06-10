@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
-from MyDataset import fmri_dataset, vim2_predict_and_true_k_dataset, vim2_predict_latent_dataset
+from MyDataset import fmri_dataset, vim2_predict_and_true_k_dataset, vim2_predict_latent_dataset, \
+    vim2_predict_and_all_true_k_dataset
 import h5py
 from torch.utils.data import DataLoader
 from visdom import Visdom
@@ -264,8 +265,8 @@ def test(viz, model, test_dataloader, test_win_mse, test_win_dist, criterion, te
 
 def train_one_frame(viz, frame_idx, latence_start, latence_end, init_weights, mean, std, epochs, lr, logIterval,
                     weight_decay, drawline, batch_size, num_workers, i_dim, o_dim, subject=1):
-    modelSaveRoot = '/data1/home/guangjie/Data/vim-2-gallant/regressionLatentModel/subject_{}/frame_{}'.format(subject,
-                                                                                                               frame_idx)
+    modelSaveRoot = '/data1/home/guangjie/Data/vim-2-gallant/regressionLatentModelSklearn/subject_{}/frame_{}'.format(
+        subject, frame_idx)  # todo
     os.makedirs(modelSaveRoot, exist_ok=True)
     # model = MyRegressionModel(i_dim).cuda()
     # model = LinearRegressionModel(i_dim, o_dim).cuda()
@@ -282,17 +283,17 @@ def train_one_frame(viz, frame_idx, latence_start, latence_end, init_weights, me
         # model = MyRegressionModel(i_dim).cuda()
         model = WeightRegressionModel(i_dim, embeds).cuda()
         optimiser = torch.optim.SGD(model.parameters(), lr=lr, weight_decay=weight_decay)  # Stochastic Gradient Descent
-
-        dataset = vim2_predict_and_true_k_dataset(
-            predict_latent_file="/data1/home/guangjie/Data/vim-2-gallant/regressed_zq_of_vqvae_by_feature_map/subject_{}/rt/frame_{}/subject_{}_frame_{}_ze_fmap_all.hdf5".format(
-                subject, frame_idx, subject, frame_idx),
-            k_file="/data1/home/guangjie/Data/vim-2-gallant/myOrig/k_from_vqvae_st_train.hdf5", frame_idx=frame_idx,
+        # "/data1/home/guangjie/Data/vim-2-gallant/regressed_zq_of_vqvae_by_feature_map/subject_{}/rt/frame_{}/subject_{}_frame_{}_ze_fmap_all.hdf5"
+        dataset = vim2_predict_and_all_true_k_dataset(
+            predict_latent_file="/data1/home/guangjie/Data/vim-2-gallant/regressed_feature_maps_by_sklearn/subject_{}/rt/frame_{}/predict_feature_maps.hdf5".format(
+                subject, frame_idx),
+            k_file="/data1/home/guangjie/Data/vim-2-gallant/myOrig/k_from_vqvae_st_train_frame_1_7000_uniform_sample.hdf5",
             latent_idx=latent_idx)
         dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=num_workers)
-        test_dataset = vim2_predict_and_true_k_dataset(
-            predict_latent_file="/data1/home/guangjie/Data/vim-2-gallant/regressed_zq_of_vqvae_by_feature_map/subject_{}/rv/frame_{}/subject_{}_frame_{}_ze_fmap_all.hdf5".format(
-                subject, frame_idx, subject, frame_idx),
-            k_file="/data1/home/guangjie/Data/vim-2-gallant/myOrig/k_from_vqvae_st_test.hdf5", frame_idx=frame_idx,
+        test_dataset = vim2_predict_and_all_true_k_dataset(
+            predict_latent_file="/data1/home/guangjie/Data/vim-2-gallant/regressed_feature_maps_by_sklearn/subject_{}/rv/frame_{}/predict_feature_maps.hdf5".format(
+                subject, frame_idx),
+            k_file="/data1/home/guangjie/Data/vim-2-gallant/myOrig/k_from_vqvae_st_test_frame_1_200_uniform_sample.hdf5",
             latent_idx=latent_idx)
         test_dataloader = DataLoader(test_dataset, batch_size=batch_size, shuffle=True, num_workers=num_workers)
 
@@ -463,8 +464,9 @@ def show_regression_performance_all(frame_idx=14, latent_idx=0, time_step=15):
 
 
 def apply_regression_to_fmri_concatenate(dt_key, frame_idx, n_latent, model_in_dim, model_out_dim, subject):
-    model_dir = '/data1/home/guangjie/Data/vim-2-gallant/regressionLatentModel/subject_{}/frame_{}'.format(subject,
-                                                                                                           frame_idx)
+    model_dir = '/data1/home/guangjie/Data/vim-2-gallant/regressionLatentModelSklearn/subject_{}/frame_{}'.format(
+        subject,
+        frame_idx)
     save_dir = "/data1/home/guangjie/Data/vim-2-gallant/regressed_k_of_vqvae_by_weighted_fmap/subject_{}/{}/frame_{}".format(
         subject, dt_key, frame_idx)
     os.makedirs(save_dir, exist_ok=True)
@@ -477,22 +479,28 @@ def apply_regression_to_fmri_concatenate(dt_key, frame_idx, n_latent, model_in_d
     # mean, std = get_vim2_fmri_mean_std(
     #     "/data1/home/guangjie/Data/vim-2-gallant/myOrig/VoxelResponses_subject1_v1234_rt_rv_rva0.hdf5",
     #     'rt')  # todo 归一化方式
+    # dataset = vim2_predict_latent_dataset(
+    #     predict_latent_file="/data1/home/guangjie/Data/vim-2-gallant/regressed_zq_of_vqvae_by_feature_map/subject_{}/{}/frame_{}/subject_{}_frame_{}_ze_fmap_all.hdf5".format(
+    #         subject, dt_key, frame_idx, subject, frame_idx), latent_idx=0)
     dataset = vim2_predict_latent_dataset(
-        predict_latent_file="/data1/home/guangjie/Data/vim-2-gallant/regressed_zq_of_vqvae_by_feature_map/subject_{}/{}/frame_{}/subject_{}_frame_{}_ze_fmap_all.hdf5".format(
-            subject, dt_key, frame_idx, subject, frame_idx), latent_idx=0)
+        "/data1/home/guangjie/Data/vim-2-gallant/regressed_feature_maps_by_sklearn/subject_{}/{}/frame_{}/predict_feature_maps.hdf5".format(
+            subject, dt_key, frame_idx), latent_idx=0)
     # 只是用一下len(dataset)
-    with h5py.File(os.path.join(save_dir, "subject_{}_frame_{}_k_fpoint_all.hdf5".format(
+    with h5py.File(os.path.join(save_dir, "subject_{}_frame_{}_k_fmap_all_sklearn.hdf5".format(
             subject, frame_idx)), 'w') as sf:
-        kDataset = sf.create_dataset('k', shape=(len(dataset), 32, 32))
+        kDataset = sf.create_dataset('k', shape=(len(dataset), 32, 32), chunks=True)
         for latent_idx in range(n_latent):
             model.load_state_dict(
                 torch.load(
                     os.path.join(model_dir, "subject_{}_frame_{}_regression_model_i_{}_o_{}_latent_{}.pth".format(
                         subject, frame_idx, i_dim, o_dim, latent_idx))))
+            # dataset = vim2_predict_latent_dataset(
+            #     predict_latent_file="/data1/home/guangjie/Data/vim-2-gallant/regressed_zq_of_vqvae_by_feature_map/subject_{}/{}/frame_{}/subject_{}_frame_{}_ze_fmap_all.hdf5".format(
+            #         subject, dt_key, frame_idx, subject, frame_idx), latent_idx=latent_idx)
             dataset = vim2_predict_latent_dataset(
-                predict_latent_file="/data1/home/guangjie/Data/vim-2-gallant/regressed_zq_of_vqvae_by_feature_map/subject_{}/{}/frame_{}/subject_{}_frame_{}_ze_fmap_all.hdf5".format(
-                    subject, dt_key, frame_idx, subject, frame_idx), latent_idx=latent_idx)
-            dataloader = DataLoader(dataset, batch_size=128, shuffle=False, num_workers=0)
+                "/data1/home/guangjie/Data/vim-2-gallant/regressed_feature_maps_by_sklearn/subject_{}/{}/frame_{}/predict_feature_maps.hdf5".format(
+                    subject, dt_key, frame_idx), latent_idx=latent_idx)
+            dataloader = DataLoader(dataset, batch_size=512, shuffle=False, num_workers=0)
             row = latent_idx // 32
             col = latent_idx % 32
             with torch.no_grad():
@@ -512,9 +520,9 @@ if __name__ == '__main__':
     assert viz.check_connection(timeout_seconds=3)
     torch.manual_seed(7)
 
-    lr = 0.01  # best:0.2
+    lr = 0.002  # best:0.2
     weight_decay = 0  # best:0.01 todo 调整此参数，改变test loss 随train loss 下降的程度
-    epochs = 60  # best:200 50
+    epochs = 100  # best:200 50
     logIterval = 30
     subject = 1
     i_dim = 128
@@ -528,10 +536,10 @@ if __name__ == '__main__':
     latent_end = 1024
     # with open("testlosslog/for_latent/test_loss_{}_{}_wd_{}.json".format(latent_start, latent_end, weight_decay),
     #           'w') as fp:
-    # test_loss = train_all_frame(viz=viz, frame_start=0, frame_end=1, latence_start=latent_start,
+    # test_loss = train_all_frame(viz=viz, frame_start=1, frame_end=2, latence_start=latent_start,
     #                             latence_end=latent_end, lr=lr, weight_decay=weight_decay, init_weights=init_weights,
     #                             epochs=epochs, logIterval=logIterval, drawline=False, batch_size=128, num_workers=0,
-    #                             i_dim=i_dim, o_dim=o_dim, subject=1)
+    #                             i_dim=i_dim, o_dim=o_dim, subject=3)
     ##########################
     # model = WeightRegressionModel(128,
     #                               "/data1/home/guangjie/Data/vim-2-gallant/myOrig/imagenet128_embeds_from_vqvae.hdf5").cuda()
@@ -548,8 +556,8 @@ if __name__ == '__main__':
     #     print(k)
     ##################################
     # json.dump(test_loss, fp)
-    apply_regression_to_fmri_concatenate(dt_key='rt', frame_idx=0, n_latent=1024, model_in_dim=i_dim,
-                                         model_out_dim=o_dim, subject=1)
+    apply_regression_to_fmri_concatenate(dt_key='rv', frame_idx=1, n_latent=1024, model_in_dim=i_dim,
+                                         model_out_dim=o_dim, subject=3)
     # apply_regression_to_fmri('rt', frame_idx=0, subject=1, n_lantent=1024, model_in_dim=4917, model_out_dim=128,
     #                          dim_lantent=128)
 

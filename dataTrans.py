@@ -71,11 +71,12 @@ def concatenate_fmaps(dt_key, frame_idx, rootDir, subject=1, n_fmaps=128):
         wf.create_dataset('latent', data=fmaps)
 
 
-def rec_a_frame_img_from_ze(dt_key, frame_idx, latentRootDir, saveRootDir, postfix, subject=1):
-    os.makedirs(latentRootDir, exist_ok=True)
-    save_dir = os.path.join(saveRootDir, "subject1/{}/frame_{}".format(
-        dt_key, frame_idx))
-    os.makedirs(save_dir, exist_ok=True)
+def rec_a_frame_img_from_ze(latentPath, savePath):
+    os.makedirs(savePath[:savePath.rfind('/')], exist_ok=True)
+    # os.makedirs(latentRootDir, exist_ok=True)
+    # save_dir = os.path.join(saveRootDir, "subject{}/{}/frame_{}".format(
+    #     subject, dt_key, frame_idx))
+    # os.makedirs(save_dir, exist_ok=True)
     MODEL, K, D = ('models/imagenet/last.ckpt', 512, 128)
     with tf.variable_scope('net'):
         with tf.variable_scope('params') as params:
@@ -92,17 +93,15 @@ def rec_a_frame_img_from_ze(dt_key, frame_idx, latentRootDir, saveRootDir, postf
     sess.run(init_op)
     net.load(sess, MODEL)
 
+    dataset = vqvae_ze_dataset(latentPath)
     # dataset = vqvae_ze_dataset(
-    #     "/data1/home/guangjie/Data/vim-2-gallant/regressed_ze_of_vqvae/subject_1/{}/frame_{}/subject_1_frame_{}_ze_latent_all.hdf5".format(
-    #         dt_key, frame_idx, frame_idx))  # todo latent?
-    dataset = vqvae_ze_dataset(
-        os.path.join(latentRootDir, "subject_{}/{}/frame_{}/subject_{}_frame_{}_ze_{}_all.hdf5".format(
-            subject, dt_key, frame_idx, subject, frame_idx, postfix)))
+    #     os.path.join(latentRootDir, "subject_{}/{}/frame_{}/subject_{}_frame_{}_ze_{}_all_wd003.hdf5".format(
+    #         subject, dt_key, frame_idx, subject, frame_idx, postfix)))
     # dataset = vqvae_zq_dataset("/data1/home/guangjie/Data/vim-2-gallant/myOrig/zq_from_vqvae_sv.hdf5")
     dataloader = DataLoader(dataset, batch_size=10, shuffle=False, num_workers=0)
 
-    with h5py.File(os.path.join(save_dir, "subject_1_{}_frame_{}_rec.hdf5".format(dt_key, frame_idx)), 'w') as sf:
-        rec_dataset = sf.create_dataset('rec', shape=(len(dataset), 128, 128, 3), dtype=np.uint8)
+    with h5py.File(savePath, 'w') as sf:
+        rec_dataset = sf.create_dataset('rec', shape=(len(dataset), 128, 128, 3), dtype=np.uint8, chunks=True)
         begin_idx = 0
         for step, data in enumerate(dataloader):
             rec = sess.run(net.p_x_z, feed_dict={net.z_e: data})  # todo z_e z_q 直接喂给zq的话在验证集效果更差。。。
@@ -152,11 +151,11 @@ def rec_a_frame_img_from_zq(dt_key, frame_idx, subject=1):
             print(step)
 
 
-def rec_a_frame_img_from_k(dt_key, frame_idx, save_dir, k_file, subject=1):
+def rec_a_frame_img_from_k(save_path, k_file):
     # save_dir = "/data1/home/guangjie/Data/vim-2-gallant/rec_by_ze_of_vqvae_use_k/subject1/{}/frame_{}".format(
     #     dt_key, frame_idx)
-    save_dir = os.path.join(save_dir, "subject{}/{}/frame_{}".format(subject, dt_key, frame_idx))
-    os.makedirs(save_dir, exist_ok=True)
+    # save_dir = os.path.join(save_dir, "subject{}/{}/frame_{}".format(subject, dt_key, frame_idx))
+    # os.makedirs(save_dir, exist_ok=True)
     MODEL, K, D = ('models/imagenet/last.ckpt', 512, 128)
     with tf.variable_scope('net'):
         with tf.variable_scope('params') as params:
@@ -180,8 +179,7 @@ def rec_a_frame_img_from_k(dt_key, frame_idx, save_dir, k_file, subject=1):
     dataset = vqvae_one_frame_k_dataset(kfile=k_file)
     dataloader = DataLoader(dataset, batch_size=10, shuffle=False, num_workers=0)
 
-    with h5py.File(os.path.join(save_dir, "subject_{}_{}_frame_{}_rec.hdf5".format(subject, dt_key, frame_idx)),
-                   'w') as sf:
+    with h5py.File(save_path, 'w') as sf:
         rec_dataset = sf.create_dataset('rec', shape=(len(dataset), 128, 128, 3), dtype=np.uint8)
         begin_idx = 0
         for step, data in enumerate(dataloader):
@@ -341,13 +339,11 @@ if __name__ == '__main__':
     # rec_a_frame_img_from_ze('rv', frame_idx=0,
     #                         latentRootDir="/data1/home/guangjie/Data/vim-2-gallant/regressed_zq_of_vqvae_by_feature_map_slice/",
     #                         saveRootDir="/data1/home/guangjie/Data/vim-2-gallant/rec_by_ze_of_vqvae_slice")
-    # rec_a_frame_img_from_ze('rt', frame_idx=0,
-    #                         latentRootDir="/data1/home/guangjie/Data/vim-2-gallant/regressed_zq_of_vqvae_by_feature_point",
-    #                         saveRootDir="/data1/home/guangjie/Data/vim-2-gallant/rec_by_ze_of_vqvae_point",
-    #                         postfix='fpoint')
-    rec_a_frame_img_from_k(dt_key='rv', frame_idx=0,
-                           save_dir="/data1/home/guangjie/Data/vim-2-gallant/rec_by_k_of_vqvae_fmap",
-                           k_file="/data1/home/guangjie/Data/vim-2-gallant/regressed_k_of_vqvae_by_weighted_fmap/subject_1/rv/frame_0/subject_1_frame_0_k_fpoint_all.hdf5")
+    rec_a_frame_img_from_ze(
+        latentPath="/data1/home/guangjie/Data/vim-2-gallant/regressed_zq_of_vqvae_by_feature_map/subject_3/rv/frame_1/subject_3_frame_1_ze_fmap_all_wd03.hdf5",
+        savePath="/data1/home/guangjie/Data/vim-2-gallant/rec_by_ze_of_vqvae_fmap/subject3/rv/frame_1/subject_3_frame_1_rec_wd03.hdf5")
+    # rec_a_frame_img_from_k(save_path="/data1/home/guangjie/Data/vim-2-gallant/rec_by_k_of_vqvae_weighted_fmap/subject3/rv/frame_1/subject_3_frame_1_rec_sklearn.hdf5",
+    #                        k_file="/data1/home/guangjie/Data/vim-2-gallant/regressed_k_of_vqvae_by_weighted_fmap/subject_3/rv/frame_1/subject_3_frame_1_k_fmap_all_sklearn.hdf5")
     # "/data1/home/guangjie/Data/vim-2-gallant/regressed_zq_of_vqvae_by_feature_latent/"
     # "/data1/home/guangjie/Data/vim-2-gallant/regressed_zq_of_vqvae_by_feature_map/"
     # "/data1/home/guangjie/Data/vim-2-gallant/rec_by_ze_of_vqvae_fmap"

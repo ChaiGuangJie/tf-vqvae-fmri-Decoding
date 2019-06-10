@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-from MyDataset import fmri_dataset, fmri_fmap_dataset
+from MyDataset import fmri_dataset, fmri_fmap_all_k_dataset
 import h5py
 from torch.utils.data import DataLoader
 from visdom import Visdom
@@ -109,12 +109,12 @@ class LinearRegressionModel(nn.Module):
         # Calling Super Class's constructor
         self.linear = nn.Linear(input_dim, output_dim)
         # nn.linear is defined in nn.Module
-        self.activate = nn.Tanh()
+        # self.activate = nn.Tanh()
 
     def forward(self, x):
         # Here the forward pass is simply a linear function
         out = self.linear(x)
-        return self.activate(out) #todo
+        return out  # self.activate(out)  # todo
 
 
 class NonLinearRegressionModel(nn.Module):
@@ -122,9 +122,9 @@ class NonLinearRegressionModel(nn.Module):
     def __init__(self, input_dim, output_dim):
         super().__init__()
         # Calling Super Class's constructor
-        self.linear1 = nn.Linear(input_dim, 512)  # 1024 256 128
+        self.linear1 = nn.Linear(input_dim, 256)  # 1024 256 128
         # self.linear2 = nn.Linear(512, 256)  # 1024 256 128
-        self.linear2 = nn.Linear(512, output_dim)  # 1024 256 128
+        self.linear2 = nn.Linear(256, output_dim)  # 1024 256 128
         # self.linear2 = nn.Linear(4096, 2048)
         # self.linear3 = nn.Linear(2048, 1024)
         # self.linear3 = nn.Linear(256, output_dim)
@@ -147,9 +147,9 @@ class NonLinearRegressionModel(nn.Module):
 
 def init_weights(m):
     if type(m) == nn.Linear:
-        nn.init.uniform_(m.weight, a=-0.0005, b=0.0005)
+        nn.init.uniform_(m.weight, a=-0.001, b=0.001)
         # if m.bias:
-        nn.init.uniform_(m.bias, a=-0.0005, b=0.0005)
+        nn.init.uniform_(m.bias, a=-0.001, b=0.001)
         # m.weight.data.normal_(0.0, 0.02)
         # m.bias.data.normal_(0.0, 0.02)
 
@@ -291,25 +291,28 @@ def train_one_frame(viz, init_weights, mean, std, epochs, lr, weight_decay, logI
     criterion = nn.MSELoss()  # Mean Squared Loss
     optimiser = torch.optim.SGD(model.parameters(), lr=lr, weight_decay=weight_decay)  # Stochastic Gradient Descent
 
-    saveDir = '/data1/home/guangjie/Data/vim-2-gallant/regressionFeatureMapModel/subject_{}/frame_{}'.format(subject,
-                                                                                                             frame_idx)
+    saveDir = '/data1/home/guangjie/Data/vim-2-gallant/regressionFeatureMapModelSeparate/subject_{}/frame_{}'.format(
+        subject,
+        frame_idx)
     os.makedirs(saveDir, exist_ok=True)
     test_loss_of_frame = []
     for fmap_idx in np.arange(fmap_start, fmap_end):  # range(n_lantent):
         model.apply(init_weights)
         # model = NonLinearRegressionModel(i_dim, o_dim).cuda()
-        dataset = fmri_fmap_dataset(
+        dataset = fmri_fmap_all_k_dataset(
             fmri_file="/data1/home/guangjie/Data/vim-2-gallant/myOrig/VoxelResponses_subject{}_v1234_rt_train.hdf5".format(
-                subject), k_file="/data1/home/guangjie/Data/vim-2-gallant/myOrig/k_from_vqvae_st_train.hdf5",
+                subject),
+            k_file="/data1/home/guangjie/Data/vim-2-gallant/myOrig/k_from_vqvae_st.hdf5",
             embeds_file="/data1/home/guangjie/Data/vim-2-gallant/myOrig/imagenet128_embeds_from_vqvae.hdf5",
-            fmri_key='rt', frame_idx=frame_idx, fmap_idx=fmap_idx)
+            fmri_key='rt', dt_key='rt', frame_idx=frame_idx, fmap_idx=fmap_idx)
         dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=num_workers)
 
-        test_dataset = fmri_fmap_dataset(
+        test_dataset = fmri_fmap_all_k_dataset(
             fmri_file="/data1/home/guangjie/Data/vim-2-gallant/myOrig/VoxelResponses_subject{}_v1234_rt_test.hdf5".format(
-                subject), k_file="/data1/home/guangjie/Data/vim-2-gallant/myOrig/k_from_vqvae_st_test.hdf5",
+                subject),
+            k_file="/data1/home/guangjie/Data/vim-2-gallant/myOrig/k_from_vqvae_st.hdf5",
             embeds_file="/data1/home/guangjie/Data/vim-2-gallant/myOrig/imagenet128_embeds_from_vqvae.hdf5",
-            fmri_key='rt', frame_idx=frame_idx, fmap_idx=fmap_idx)
+            fmri_key='rt', dt_key='rv', frame_idx=frame_idx, fmap_idx=fmap_idx)
         test_dataloader = DataLoader(test_dataset, batch_size=batch_size, shuffle=True, num_workers=num_workers)
 
         train_global_idx = np.array([0])
@@ -382,9 +385,8 @@ def apply_regression_to_fmri(dt_key, frame_idx, subject=1, n_fmap=128, model_in_
         print(fmap_idx)
 
 
-def apply_regression_to_fmri_concatenate(dt_key, frame_idx, subject=1, n_fmap=128, model_in_dim=4917,
-                                         model_out_dim=1024):
-    model_dir = "/data1/home/guangjie/Data/vim-2-gallant/regressionFeatureMapModel/subject_{}/frame_{}".format(subject,
+def apply_regression_to_fmri_concatenate(dt_key, frame_idx, subject, n_fmap, model_in_dim, model_out_dim, wd):
+    model_dir = "/data1/home/guangjie/Data/vim-2-gallant/regressionFeatureMapModelSeparate/subject_{}/frame_{}".format(subject,
                                                                                                                frame_idx)
     save_dir = "/data1/home/guangjie/Data/vim-2-gallant/regressed_zq_of_vqvae_by_feature_map/subject_{}/{}/frame_{}".format(
         subject, dt_key, frame_idx)
@@ -396,19 +398,21 @@ def apply_regression_to_fmri_concatenate(dt_key, frame_idx, subject=1, n_fmap=12
     #     'rt')  # todo 归一化方式
     mean, std = None, None
     dataset = fmri_dataset(
-        "/data1/home/guangjie/Data/vim-2-gallant/myOrig/VoxelResponses_subject1_v1234_rt_{}.hdf5".format(
-            'train' if dt_key == 'rt' else 'test'), mean, std, 'rt')  # todo train test
+        "/data1/home/guangjie/Data/vim-2-gallant/myOrig/VoxelResponses_subject{}_v1234_rt_{}.hdf5".format(
+            subject, 'train' if dt_key == 'rt' else 'test'), mean, std, 'rt')  # todo train test
     # dataset = fmri_dataset(
-    #     "/data1/home/guangjie/Data/vim-2-gallant/myOrig/VoxelResponses_subject1_v1234_rt_rv_rva0.hdf5",
+    #     "/data1/home/guangjie/Data/vim-2-gallant/myOrig/VoxelResponses_subject{}_v1234_{}_filter.hdf5".format(subject,
+    #                                                                                                           dt_key),
     #     mean, std, dt_key)  # todo
-    dataloader = DataLoader(dataset, batch_size=128, shuffle=False, num_workers=0)
-    with h5py.File(os.path.join(save_dir, "subject_{}_frame_{}_ze_fmap_all.hdf5".format(
-            subject, frame_idx)), 'w') as sf:
-        latent = sf.create_dataset('latent', shape=(len(dataset), 32, 32, 128))
+    dataloader = DataLoader(dataset, batch_size=512, shuffle=False, num_workers=0)
+    with h5py.File(os.path.join(save_dir, "subject_{}_frame_{}_ze_fmap_all_wd{}.hdf5".format(
+            subject, frame_idx, wd)), 'w') as sf:
+        latent = sf.create_dataset('latent', shape=(len(dataset), 32, 32, 128), chunks=True)
         for fmap_idx in range(n_fmap):
             model.load_state_dict(
-                torch.load(os.path.join(model_dir, "subject_{}_frame_{}_regression_model_i_{}_o_{}_fmap_{}.pth".format(
-                    subject, frame_idx, i_dim, o_dim, fmap_idx))))
+                torch.load(
+                    os.path.join(model_dir, "subject_{}_frame_{}_regression_model_i_{}_o_{}_fmap_{}.pth".format(
+                        subject, frame_idx, i_dim, o_dim, fmap_idx))))
             with torch.no_grad():
                 begin_idx = 0
                 model.eval()
@@ -506,23 +510,21 @@ def show_regression_performance_all(frame_idx=14, latent_idx=0, time_step=15):
                 print(loss)
 
 
-def eval_model_performance(dt_key, frame_idx, modelRootDir, batch_size, num_workers, i_dim, o_dim):
+def eval_model_performance(dt_key, frame_idx, modelRootDir, batch_size, num_workers, i_dim, o_dim, subject):
     model = LinearRegressionModel(i_dim, o_dim).cuda()
     criterion = nn.MSELoss()  # Mean Squared Loss
     fmaps_loss = []
     for fmap_idx in range(128):
-        dataset = fmri_fmap_dataset(
+        dataset = fmri_fmap_all_k_dataset(  # todo
             fmri_file="/data1/home/guangjie/Data/vim-2-gallant/myOrig/VoxelResponses_subject{}_v1234_rt_{}.hdf5".format(
                 subject, 'train' if dt_key == 'rt' else 'test'),
-            k_file="/data1/home/guangjie/Data/vim-2-gallant/myOrig/k_from_vqvae_st_{}.hdf5".format(
-                'train' if dt_key == 'rt' else 'test'),
+            k_file="/data1/home/guangjie/Data/vim-2-gallant/myOrig/k_from_vqvae_st_test_frame_1_200_uniform_sample.hdf5",
             embeds_file="/data1/home/guangjie/Data/vim-2-gallant/myOrig/imagenet128_embeds_from_vqvae.hdf5",
             fmri_key='rt', frame_idx=frame_idx, fmap_idx=fmap_idx)
         dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers)
-        model.load_state_dict(torch.load(os.path.join(modelRootDir,
-                                                      "subject_{}/frame_{}/subject_{}_frame_{}_regression_model_i_{}_o_{}_fmap_{}.pth".format(
-                                                          subject, frame_idx, subject, frame_idx, i_dim, o_dim,
-                                                          fmap_idx))))
+        model.load_state_dict(torch.load(os.path.join(
+            modelRootDir, "subject_{}/frame_{}/subject_{}_frame_{}_regression_model_i_{}_o_{}_fmap_{}.pth".format(
+                subject, frame_idx, subject, frame_idx, i_dim, o_dim, fmap_idx))))
         model.eval()
         fmap_loss = []
         for step, (fmri, fmap) in enumerate(dataloader):
@@ -544,39 +546,45 @@ if __name__ == '__main__':
     torch.manual_seed(7)
 
     lr = 0.2  # best:0.2
-    weight_decay = 0.013  # best:0.01 todo 调整此参数，改变test loss 随train loss 下降的程度
-    epochs = 60  # best:200 50
+    weight_decay = 0.01  # best:0.01 todo 调整此参数，改变test loss 随train loss 下降的程度
+    epochs = 40  # best:200 50
     logIterval = 30
-    subject = 1
-    i_dim = 4854 #4917 #
+    subject = 3
+    i_dim = 4854 # 893  # 4854 frame_0:4917 4917  #4828  #Subject3V12:2471    Subject3V34:2383 subject3ips:893
     o_dim = 1024
     n_frames = 15
     # todo frame_1 Adam w_d 0.1
     # show_regression_performance_all()
     # for i in range(1024):
     # show_regression_performance(model_in_dim=i_dim, model_out_dim=o_dim, frame_idx=0, latent_idx=0)
-    frame_idx = 0
-    fmap_start = 120
+    frame_idx = 1
+    fmap_start =96
     fmap_end = 128
     # with open("testlosslog/for_feature_map/test_loss_{}_{}_wd_{}.json".format(fmap_start, fmap_end, weight_decay),
     #           'w') as fp:
-    # lossdict = train_frames(viz, i_dim, o_dim, lr, weight_decay, init_weights, epochs, logIterval, drawline=False,
-    #                         frame_start=6, frame_end=7, fmap_start=fmap_start, fmap_end=fmap_end, batch_size=128,
-    #                         num_workers=0, subject=1)
-        # json.dump({"loss": lossdict}, fp)
+    lossdict = train_frames(viz, i_dim, o_dim, lr, weight_decay, init_weights, epochs, logIterval, drawline=False,
+                            frame_start=8, frame_end=9, fmap_start=fmap_start, fmap_end=fmap_end, batch_size=128,
+                            num_workers=0, subject=3)
+    # json.dump({"loss": lossdict}, fp)
     # train_loss = []
-    train_loss = eval_model_performance(dt_key='rt', frame_idx=frame_idx,
-                                        modelRootDir="/data1/home/guangjie/Data/vim-2-gallant/regressionFeatureMapModel/",
-                                        batch_size=128, num_workers=0, i_dim=i_dim, o_dim=o_dim)
-    test_loss = eval_model_performance(dt_key='rv', frame_idx=frame_idx,
-                                       modelRootDir="/data1/home/guangjie/Data/vim-2-gallant/regressionFeatureMapModel/",
-                                       batch_size=128, num_workers=0, i_dim=i_dim, o_dim=o_dim)
-    #
-    for i, (train, test) in enumerate(zip(train_loss, test_loss)):
-        print('fmap_{} :'.format(i), train, test)
+    # train_loss = eval_model_performance(dt_key='rt', frame_idx=frame_idx,
+    #                                     modelRootDir="/data1/home/guangjie/Data/vim-2-gallant/regressionFeatureMapModel/",
+    #                                     batch_size=128, num_workers=0, i_dim=i_dim, o_dim=o_dim)
 
-    with open('testlosslog/eval_loss/frame_{}_feature_map_loss.json'.format(frame_idx), 'w') as fp:
-        json.dump({'train': train_loss, 'test': test_loss}, fp)
+    # test_loss = eval_model_performance(dt_key='rv', frame_idx=frame_idx,
+    #                                    modelRootDir="/data1/home/guangjie/Data/vim-2-gallant/regressionFeatureMapModel/",
+    #                                    batch_size=128, num_workers=0, i_dim=i_dim, o_dim=o_dim, subject=3)
+    # for i, loss in enumerate(test_loss):
+    #     print('fmap_{}:'.format(i), loss)
+    #
+    # with open('testlosslog/eval_loss/subject_{}_frame_{}_feature_map_loss.json'.format(subject, frame_idx), 'w') as fp:
+    #     json.dump({'test': test_loss}, fp)
+
+    # for i, (train, test) in enumerate(zip(train_loss, test_loss)):
+    #     print('fmap_{} :'.format(i), train, test)
+    #
+    # with open('testlosslog/eval_loss/frame_{}_feature_map_loss.json'.format(frame_idx), 'w') as fp:
+    #     json.dump({'train': train_loss, 'test': test_loss}, fp)
     # with open('testlosslog/eval_loss/feature_map_loss.json', 'r') as fp:
     #     lossfile = json.load(fp)
     #     train_loss = lossfile['train']
@@ -585,5 +593,5 @@ if __name__ == '__main__':
     #         print('fmap_{} :'.format(i), train, test)
     # apply_regression_to_fmri('rt', frame_idx=5, subject=1)
 
-    # apply_regression_to_fmri_concatenate(dt_key='rt', frame_idx=1, subject=1, n_fmap=128, model_in_dim=i_dim,
-    #                                      model_out_dim=o_dim) #frame_1 4917
+    # apply_regression_to_fmri_concatenate(dt_key='rv', frame_idx=7, subject=3, n_fmap=128, model_in_dim=i_dim,
+    #                                      model_out_dim=o_dim, wd='03')  # frame_1 4917

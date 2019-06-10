@@ -250,6 +250,52 @@ def apply_regression_to_fmri(dt_key, frame_idx, n_point, subject, model_in_dim, 
             print(p_idx)
 
 
+def apply_regression_to_fmri_quick(dt_key, frame_idx, n_point, subject, model_in_dim, model_out_dim):
+    model_dir = "/data1/home/guangjie/Data/vim-2-gallant/regressionFeaturePointModel/subject_{}/frame_{}".format(
+        subject, frame_idx)
+    save_dir = "/data1/home/guangjie/Data/vim-2-gallant/regressed_zq_of_vqvae_by_feature_point/subject_{}/{}/frame_{}".format(
+        subject, dt_key, frame_idx)
+    os.makedirs(save_dir, exist_ok=True)
+    # model = NonLinearRegressionModel(model_in_dim, model_out_dim).cuda()
+    model = LinearRegressionModel(model_in_dim, model_out_dim).cuda()
+    # mean, std = get_vim2_fmri_mean_std(
+    #     "/data1/home/guangjie/Data/vim-2-gallant/myOrig/VoxelResponses_subject1_v1234_rt_rv_rva0.hdf5",
+    #     'rt')  # todo 归一化方式
+    mean, std = None, None
+    dataset = fmri_dataset(
+        "/data1/home/guangjie/Data/vim-2-gallant/myOrig/VoxelResponses_subject1_v1234_rt_{}.hdf5".format(
+            'train' if dt_key == 'rt' else 'test'), mean, std, 'rt')  # todo train test
+    # dataset = fmri_dataset(
+    #     "/data1/home/guangjie/Data/vim-2-gallant/myOrig/VoxelResponses_subject1_v1234_rt_rv_rva0.hdf5",
+    #     mean, std, dt_key)  # todo
+    dataloader = DataLoader(dataset, batch_size=6000, shuffle=False, num_workers=0)
+
+    with h5py.File(
+            os.path.join(save_dir, "subject_{}_frame_{}_ze_fpoint_all_quick_apply.hdf5".format(subject, frame_idx)),
+            'w') as sf:
+        latent = sf.create_dataset('latent', shape=(len(dataset), 32, 32, 128), chunks=True)
+
+        for p_idx in range(n_point):
+            model.load_state_dict(
+                torch.load(
+                    os.path.join(model_dir, "subject_{}_frame_{}_regression_model_i_{}_o_{}_fpoint_{}.pth".format(
+                        subject, frame_idx, i_dim, o_dim, p_idx))))
+            row_column = p_idx // 128
+            latent_idx = p_idx % 128
+            row = row_column // 32
+            column = row_column % 32
+
+            with torch.no_grad():
+                begin_idx = 0
+                model.eval()
+                for step, fmri in enumerate(dataloader):
+                    out = model(fmri.cuda())
+                    end_idx = begin_idx + len(out)
+                    latent[begin_idx:end_idx, row, column, latent_idx] = out.squeeze().cpu().numpy()  # 需要cpu().numpy()?
+                    begin_idx = end_idx
+            print(p_idx)
+
+
 def train_frames(viz, i_dim, o_dim, lr, weight_decay, init_weights, epochs, logIterval, drawline, frame_start,
                  frame_end, fpoint_start, fpoint_end, batch_size, num_workers, subject):
     # mean, std = get_vim2_fmri_mean_std(
@@ -265,75 +311,6 @@ def train_frames(viz, i_dim, o_dim, lr, weight_decay, init_weights, epochs, logI
                                         i_dim=i_dim, o_dim=o_dim, subject=subject)
         testloss_of_all_fmaps[str(frame_idx)] = testloss_list
     return testloss_of_all_fmaps
-
-
-def show_regression_performance(model_in_dim, model_out_dim, frame_idx=0, latent_idx=0, time_step=15):
-    model = LinearRegressionModel(model_in_dim, model_out_dim).cuda()
-    model.load_state_dict(
-        torch.load(
-            "/data1/home/guangjie/Data/vim-2-gallant/regressionModel/subject_1/frame_{}/subject_1_regression_model_i_4917_o_128_latent_{}.pth".format(
-                frame_idx, latent_idx)))
-    criterion = nn.MSELoss()  # Mean Squared Loss
-
-    with h5py.File("/data1/home/guangjie/Data/vim-2-gallant/myOrig/VoxelResponses_subject1_v1234_rt_rv_rva0.hdf5",
-                   'r') as vf:
-        rt_data = vf['rt']
-        rv_data = vf['rv']
-        rva0_data = vf['rva0']
-        with h5py.File("/data1/home/guangjie/Data/vim-2-gallant/myOrig/zq_from_vqvae_st.hdf5", 'r') as st_zq_f:
-            st_zq_data = st_zq_f['zq']
-            with h5py.File("/data1/home/guangjie/Data/vim-2-gallant/myOrig/zq_from_vqvae_sv.hdf5", 'r') as sv_zq_f:
-                sv_zq_data = sv_zq_f['zq']
-                with torch.no_grad():
-                    model.eval()
-                    rt_loss_list, rv_loss_list = [], []
-                    for i in range(100):  # n 个时刻
-                        rt = torch.from_numpy(rt_data[:, i]).cuda()
-                        o_rt = model(rt)
-                        zq_st_frame_latent = torch.from_numpy(
-                            st_zq_data[frame_idx + i * time_step].reshape(1024, 128)[latent_idx]).cuda()
-                        rt_loss = criterion(o_rt, zq_st_frame_latent)
-                        rt_loss_list.append(rt_loss.cpu().numpy())
-
-                        rv = torch.from_numpy(rv_data[:, i]).cuda()
-                        o_rv = model(rv)
-                        zq_sv_frame_latent = torch.from_numpy(
-                            sv_zq_data[frame_idx + i * time_step].reshape(1024, 128)[latent_idx]).cuda()
-                        rv_loss = criterion(o_rv, zq_sv_frame_latent)
-                        rv_loss_list.append(rv_loss.cpu().numpy())
-
-                        # print(i, ' rt_loss:', rt_loss, 'rv_loss:', rv_loss)
-                    print(latent_idx, np.mean(rt_loss_list), np.mean(rv_loss_list))
-                    # rva0 = rva0_data[:, i].cuda()
-                    # o_rva0 = model(rva0)
-
-
-def show_regression_performance_all(frame_idx=14, latent_idx=0, time_step=15):
-    criterion = nn.MSELoss()  # Mean Squared Loss
-
-    with h5py.File(
-            "/data1/home/guangjie/Data/vim-2-gallant/regressed_ze_of_vqvae/subject_1/rt/frame_0/subject_1_frame_0_ze_latent_all.hdf5",
-            'r') as reg_rt_zq_f:
-        reg_rt_zq_data = reg_rt_zq_f['latent']
-        with h5py.File("/data1/home/guangjie/Data/vim-2-gallant/myOrig/zq_from_vqvae_st.hdf5", 'r') as st_zq_f:
-            st_zq_data = st_zq_f['zq'][frame_idx::time_step]
-            for i in range(100):
-                reg_zq = torch.from_numpy(reg_rt_zq_data[i])
-                zq = torch.from_numpy(st_zq_data[i].reshape(1024, 128))
-                loss = criterion(reg_zq, zq)
-                print(loss)
-
-    with h5py.File(
-            "/data1/home/guangjie/Data/vim-2-gallant/regressed_ze_of_vqvae/subject_1/rv/frame_0/subject_1_frame_0_ze_latent_all.hdf5",
-            'r') as reg_rv_zq_f:
-        reg_rv_zq_data = reg_rv_zq_f['latent']
-        with h5py.File("/data1/home/guangjie/Data/vim-2-gallant/myOrig/zq_from_vqvae_sv.hdf5", 'r') as sv_zq_f:
-            sv_zq_data = sv_zq_f['zq'][frame_idx::time_step]
-            for i in range(100):
-                reg_zq = torch.from_numpy(reg_rv_zq_data[i])
-                zq = torch.from_numpy(sv_zq_data[i].reshape(1024, 128))
-                loss = criterion(reg_zq, zq)
-                print(loss)
 
 
 if __name__ == '__main__':
@@ -362,5 +339,5 @@ if __name__ == '__main__':
     #                         batch_size=128, num_workers=0, subject=1)
     #     json.dump({"loss": lossdict}, fp)
 
-    apply_regression_to_fmri(dt_key='rt', frame_idx=0, n_point=131072, subject=1, model_in_dim=i_dim,
-                             model_out_dim=o_dim)
+    apply_regression_to_fmri_quick(dt_key='rt', frame_idx=0, n_point=131072, subject=1, model_in_dim=i_dim,
+                                   model_out_dim=o_dim)
