@@ -1,6 +1,6 @@
 import h5py
 import tensorflow as tf
-from MyDataset import vqvae_ze_dataset, Stimuli_Dataset, vqvae_zq_dataset, vqvae_k_dataset, vqvae_one_frame_k_dataset
+from MyDataset import vqvae_ze_dataset, Stimuli_Dataset, vqvae_one_frame_k_dataset, vim1_stimuli_dataset,vim1_blur_stimuli_dataset
 from torch.utils.data import DataLoader
 from model import VQVAE, _imagenet_arch
 import numpy as np
@@ -208,21 +208,23 @@ def extract_zq_from_vqvae(dt_key):
     sess.run(init_op)
     net.load(sess, MODEL)
 
-    dataset = Stimuli_Dataset("/data1/home/guangjie/Data/vim-2-gallant/orig/Stimuli.mat", dt_key)
+    dtKey = 'stimTrn' if dt_key == 'st' else 'stimVal'
+    dataset = vim1_blur_stimuli_dataset("/data1/home/guangjie/Data/vim-1/Stimuli.mat", dtKey, 3)
+    # dataset = Stimuli_Dataset("/data1/home/guangjie/Data/vim-2-gallant/orig/Stimuli.mat", dt_key)
     dataloader = DataLoader(dataset, batch_size=10, shuffle=False, num_workers=1)
 
-    with h5py.File("/data1/home/guangjie/Data/vim-2-gallant/myOrig/zq_from_vqvae_{}.hdf5".format(dt_key), 'w') as sf:
-        zq_dataset = sf.create_dataset('zq', shape=(len(dataset), 32, 32, 128))
+    with h5py.File("/data1/home/guangjie/Data/vim1/exprimentData/extract_from_vqvae/ze_from_vqvae_{}.hdf5".format(dt_key), 'w') as sf:
+        ze_dataset = sf.create_dataset('latent', shape=(len(dataset), 32, 32, 128))
         begin_idx = 0
         for step, data in enumerate(dataloader):
-            zq = sess.run(net.z_q, feed_dict={x: data})
-            end_idx = begin_idx + len(zq)
-            zq_dataset[begin_idx:end_idx] = zq
+            ze = sess.run(net.z_e, feed_dict={x: data})
+            end_idx = begin_idx + len(ze)
+            ze_dataset[begin_idx:end_idx] = ze
             begin_idx = end_idx
             print(step)
 
 
-def extract_k_rec_from_vqvae(dt_key, frame_idx):
+def extract_k_rec_from_vqvae(dt_key):
     MODEL, K, D = ('models/imagenet/last.ckpt', 512, 128)
     with tf.variable_scope('net'):
         with tf.variable_scope('params') as params:
@@ -239,18 +241,20 @@ def extract_k_rec_from_vqvae(dt_key, frame_idx):
     sess.run(init_op)
     net.load(sess, MODEL)
 
-    dataset = Stimuli_Dataset(
-        "/data1/home/guangjie/Data/purdue/exprimentData/Stimuli/Stimuli_{}_frame_{}.hdf5".format(
-            'train' if dt_key == 'st' else 'test', frame_idx), dt_key, transpose=False)
+    # dataset = Stimuli_Dataset(
+    #     "/data1/home/guangjie/Data/purdue/exprimentData/Stimuli/Stimuli_{}_frame_{}.hdf5".format(
+    #         'train' if dt_key == 'st' else 'test', frame_idx), dt_key, transpose=False)
+    dtKey = 'stimTrn' if dt_key == 'st' else 'stimVal'
+    dataset = vim1_blur_stimuli_dataset("/data1/home/guangjie/Data/vim-1/Stimuli.hdf5", dtKey, 3)
     dataloader = DataLoader(dataset, batch_size=10, shuffle=False, num_workers=1)
-
+    os.makedirs('/data1/home/guangjie/Data/vim1/exprimentData/extract_from_vqvae', exist_ok=True)
     with h5py.File(
-            "/data1/home/guangjie/Data/purdue/exprimentData/extract_from_vqvae/rec_from_vqvae_{}_frame_{}.hdf5".format(
-                dt_key, frame_idx), 'w') as recf:
+            "/data1/home/guangjie/Data/vim1/exprimentData/extract_from_vqvae/rec_from_vqvae_{}.hdf5".format(
+                dt_key), 'w') as recf:
         rec_dataset = recf.create_dataset('rec', shape=(len(dataset), 128, 128, 3))
         with h5py.File(
-                "/data1/home/guangjie/Data/purdue/exprimentData/extract_from_vqvae/k_from_vqvae_{}_frame_{}.hdf5".format(
-                    dt_key, frame_idx), 'w') as kf:
+                "/data1/home/guangjie/Data/vim1/exprimentData/extract_from_vqvae/k_from_vqvae_{}.hdf5".format(
+                    dt_key), 'w') as kf:
             k_dataset = kf.create_dataset('k', shape=(len(dataset), 32, 32))
             begin_idx = 0
             for step, data in enumerate(dataloader):
@@ -339,16 +343,21 @@ if __name__ == '__main__':
     # rec_a_frame_img_from_ze('rv', frame_idx=0,
     #                         latentRootDir="/data1/home/guangjie/Data/vim-2-gallant/regressed_zq_of_vqvae_by_feature_map_slice/",
     #                         saveRootDir="/data1/home/guangjie/Data/vim-2-gallant/rec_by_ze_of_vqvae_slice")
-    rec_a_frame_img_from_ze(
-        latentPath="/data1/home/guangjie/Data/vim-2-gallant/regressed_zq_of_vqvae_by_feature_map/subject_3/rv/frame_1/subject_3_frame_1_ze_fmap_all_wd03.hdf5",
-        savePath="/data1/home/guangjie/Data/vim-2-gallant/rec_by_ze_of_vqvae_fmap/subject3/rv/frame_1/subject_3_frame_1_rec_wd03.hdf5")
-    # rec_a_frame_img_from_k(save_path="/data1/home/guangjie/Data/vim-2-gallant/rec_by_k_of_vqvae_weighted_fmap/subject3/rv/frame_1/subject_3_frame_1_rec_sklearn.hdf5",
-    #                        k_file="/data1/home/guangjie/Data/vim-2-gallant/regressed_k_of_vqvae_by_weighted_fmap/subject_3/rv/frame_1/subject_3_frame_1_k_fmap_all_sklearn.hdf5")
+    #####################################################################################################################
+    # rec_a_frame_img_from_ze(
+    #     latentPath="/data1/home/guangjie/Data/vim1/regressed_feature_map/subject_1/dataTrnS1/subject_1_dataTrnS1_roi_12_regressed_fmap_all_wd_0.001_normalizedFmap.hdf5",
+    #     savePath="/data1/home/guangjie/Data/vim1/rec_by_ze_of_vqvae_fmap/subject1/dataTrnS1/subject_1_dataTrnS1_roi_12_rec_wd_0.001_normalizedFmap.hdf5")
+    #####################################################################################################################
+    # extract_k_rec_from_vqvae('sv')
+    ######################################################################################################################################
+    # rec_a_frame_img_from_k(save_path="/data1/home/guangjie/Data/vim1/rec_by_k/subject_1_dataTrnS1_roi_12_wd_0.005_td_0.001_rec.hdf5",
+    #                        k_file="/data1/home/guangjie/Data/vim1/selected_k_from_regressed_feature_map/subject_1_dataTrnS1_roi_12_wd_0.005_td_0.001_k.hdf5")
+    #######################################################################################################################################
     # "/data1/home/guangjie/Data/vim-2-gallant/regressed_zq_of_vqvae_by_feature_latent/"
     # "/data1/home/guangjie/Data/vim-2-gallant/regressed_zq_of_vqvae_by_feature_map/"
     # "/data1/home/guangjie/Data/vim-2-gallant/rec_by_ze_of_vqvae_fmap"
     # rec_a_frame_img_from_zq('rt', frame_idx=0, subject=1)
-    # extract_zq_from_vqvae('st')
+    extract_zq_from_vqvae('st')
     # split_rt_to_train_test()
     # split_st_to_train_test()
     # split_zq_to_train_test()
@@ -363,5 +372,5 @@ if __name__ == '__main__':
     #                              subject=1)
     # rec_a_frame_img_from_k('rv', frame_idx=0, subject=1)
 
-    # extract_k_rec_from_vqvae('sv', frame_idx=0)
+    # extract_k_rec_from_vqvae('st')
     print('end')
