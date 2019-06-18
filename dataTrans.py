@@ -344,9 +344,9 @@ if __name__ == '__main__':
     #                         latentRootDir="/data1/home/guangjie/Data/vim-2-gallant/regressed_zq_of_vqvae_by_feature_map_slice/",
     #                         saveRootDir="/data1/home/guangjie/Data/vim-2-gallant/rec_by_ze_of_vqvae_slice")
     #####################################################################################################################
-    # rec_a_frame_img_from_ze(
-    #     latentPath="/data1/home/guangjie/Data/vim1/regressed_feature_map/subject_1/dataTrnS1/subject_1_dataTrnS1_roi_12_regressed_fmap_all_wd_0.001_normalizedFmap.hdf5",
-    #     savePath="/data1/home/guangjie/Data/vim1/rec_by_ze_of_vqvae_fmap/subject1/dataTrnS1/subject_1_dataTrnS1_roi_12_rec_wd_0.001_normalizedFmap.hdf5")
+    rec_a_frame_img_from_ze(
+        latentPath="/data1/home/guangjie/Data/vim2/regressed_feature_map/subject_1/rt/subject_1_rt_roi_v1lhv1rhv2lhv2rhv3alhv3arhv3blhv3brhv3lhv3rhv4lhv4rh_regressed_fmap_all_wd_0.03_normalizedFmap_no_mm_18x18_blur3_nolinearConv_Adam_bn_inverse_32x32.hdf5",
+        savePath="/data1/home/guangjie/Data/vim2/rec_by_ze_of_vqvae_fmap/subject1/rt/subject_1_rt_roi_v1lhv1rhv2lhv2rhv3alhv3arhv3blhv3brhv3lhv3rhv4lhv4rh_rec_wd_0.03_normalizedFmap_no_mm_18x18_blur3_nolinearConv_Adam_bn_inverse_32x32.hdf5")
     #####################################################################################################################
     # extract_k_rec_from_vqvae('sv')
     ######################################################################################################################################
@@ -357,7 +357,7 @@ if __name__ == '__main__':
     # "/data1/home/guangjie/Data/vim-2-gallant/regressed_zq_of_vqvae_by_feature_map/"
     # "/data1/home/guangjie/Data/vim-2-gallant/rec_by_ze_of_vqvae_fmap"
     # rec_a_frame_img_from_zq('rt', frame_idx=0, subject=1)
-    extract_zq_from_vqvae('st')
+    # extract_zq_from_vqvae('st')
     # split_rt_to_train_test()
     # split_st_to_train_test()
     # split_zq_to_train_test()

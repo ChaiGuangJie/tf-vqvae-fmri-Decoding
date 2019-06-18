@@ -287,18 +287,19 @@ def show_vqvae_feature_map(viz):
     with h5py.File("/data1/home/guangjie/Data/vim1/exprimentData/extract_from_vqvae/rec_from_vqvae_st.hdf5",
                    'r') as decf:
         dec = decf['rec']
-        with h5py.File("/data1/home/guangjie/Data/vim1/exprimentData/extract_from_vqvae/k_from_vqvae_st.hdf5",
+        with h5py.File("/data1/home/guangjie/Data/vim2/extract_from_vqvae/k_from_vqvae_st_frame_1.hdf5",
                        'r') as kf:
             k = kf['k'][:].astype(np.uint64)
-            with h5py.File("/data1/home/guangjie/Data/vim1/exprimentData/extract_from_vqvae/normlized_zq_of_st_fmap_mm_scaler_T_23x23_blur3.hdf3",
-                           'r') as zef:
+            with h5py.File(
+                    "/data1/home/guangjie/Data/vim1/exprimentData/extract_from_vqvae/zq_of_st_fmap_ss_scaler_18x18_blur3.hdf3",
+                    'r') as zef:
                 ori_ze = zef['latent'][:]
                 with h5py.File(
-                        "/data1/home/guangjie/Data/vim2/extract_from_vqvae/zq_of_st_fmap_mm_scaler_23x23_blur3.hdf3",
+                        "/data1/home/guangjie/Data/vim2/regressed_feature_map/subject_1/rt/subject_1_rt_roi_v1lhv1rhv2lhv2rhv3alhv3arhv3blhv3brhv3lhv3rhv4lhv4rh_regressed_fmap_all_wd_0.03_normalizedFmap_no_mm_18x18_blur3_nolinearConv_Adam_bn_inverse_32x32.hdf5",
                         'r') as zef:
                     ze = zef['latent'][:]
                     with h5py.File(
-                            "/data1/home/guangjie/Data/vim1/rec_by_ze_of_vqvae_fmap/subject1/dataTrnS1/subject_1_dataTrnS1_roi_123456_rec_wd_0.06_normalize_blur.hdf5",
+                            "/data1/home/guangjie/Data/vim2/rec_by_ze_of_vqvae_fmap/subject1/rt/subject_1_rt_roi_v1lhv1rhv2lhv2rhv3alhv3arhv3blhv3brhv3lhv3rhv4lhv4rh_rec_wd_0.03_normalizedFmap_no_mm_18x18_blur3_nolinearConv_Adam_bn_inverse_32x32.hdf5",
                             'r') as recf:
                         rec = recf['rec'][:] / 255.0
                         with h5py.File(
@@ -307,11 +308,11 @@ def show_vqvae_feature_map(viz):
                             embeds = ef['embeds'][:]
                             ori_dec_rec_win = viz.images(np.random.randn(3, 3, 128, 128))
                             fmap_win = viz.images(np.random.randn(128, 1, 32, 32))
-                            ori_ze_win = viz.images(np.random.randn(128, 1, 23, 23))
-                            ze_win = viz.images(np.random.randn(128, 1, 23, 23))
+                            ori_ze_win = viz.images(np.random.randn(128, 1, 18, 18))
+                            ze_win = viz.images(np.random.randn(128, 1, 32, 32))
                             for i, (_stim, _dec, _rec, _k, _oze, _ze) in enumerate(
                                     zip(stimTrn, dec, rec, k, ori_ze, ze)):
-                                if i < 1699: continue
+                                if i < 6999: continue
                                 # _stim = ((_stim + 0.5) * 255).astype(np.uint8)
                                 _stim = np.clip((_stim - np.min(_stim)) / np.max(_stim - np.min(_stim)), 0, 1)
                                 _stim = np.repeat(_stim[:, :, np.newaxis], 3, axis=-1)
@@ -335,6 +336,35 @@ def show_vqvae_feature_map(viz):
                                 # cv2.imshow('img', np.concatenate([_stim, _rec], axis=-2))  #
                                 # cv2.waitKey(1)
                                 print(i)
+
+
+def vim2_show_vqvae_feature_map(viz):
+    with h5py.File("/data1/home/guangjie/Data/vim2/extract_from_vqvae/k_from_vqvae_st_frame_1.hdf5",
+                   'r') as kf:
+        k = kf['k'][:].astype(np.uint64)
+        with h5py.File(
+                "/data1/home/guangjie/Data/vim2/regressed_feature_map/subject_1/rt/subject_1_rt_roi_v1lhv1rhv2lhv2rhv3alhv3arhv3blhv3brhv3lhv3rhv4lhv4rh_regressed_fmap_all_wd_0.03_normalizedFmap_no_mm_18x18_blur3_nolinearConv_Adam_bn_inverse_32x32.hdf5",
+                'r') as zef:
+            ze = zef['latent'][:]
+            with h5py.File(
+                    "/data1/home/guangjie/Data/vim-2-gallant/myOrig/imagenet128_embeds_from_vqvae.hdf5",
+                    'r') as ef:
+                embeds = ef['embeds'][:]
+
+                fmap_win = viz.images(np.random.randn(128, 1, 32, 32))
+                ze_win = viz.images(np.random.randn(128, 1, 32, 32))
+                for i in np.arange(0, 7200):
+                    _k = k[i]
+                    _ze = ze[i]
+                    fmap = embeds[_k].transpose((2, 0, 1))[:, np.newaxis, :, :]
+                    fmap = np.clip((fmap - np.min(fmap)) / np.max(fmap - np.min(fmap)), 0, 1)
+
+                    _ze = _ze.transpose((2, 0, 1))[:, np.newaxis, :, :]  # / np.max(_ze)
+                    _ze = np.clip((_ze - np.min(_ze)) / np.max(_ze - np.min(_ze)), 0, 1)
+
+                    viz.images(fmap, win=fmap_win)
+                    viz.images(_ze, win=ze_win)
+                    print(i)
 
 
 def show_normlized_zq(viz):
@@ -384,7 +414,8 @@ if __name__ == '__main__':
     # )
     # visual_vim1_fmri(viz, rois=[1,2,3], subject=1)
     #############################################
-    show_vqvae_feature_map(viz)
+    vim2_show_vqvae_feature_map(viz)
+    # show_vqvae_feature_map(viz)
     # show_normlized_zq(viz)
     a = input()
     print('end')
