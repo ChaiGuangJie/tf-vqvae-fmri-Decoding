@@ -8,7 +8,7 @@ import os
 import torch
 import scipy.io as sio
 from MyDataset import vim1_stimuli_dataset, vim1_fmri_transpose_dataset
-import cv2
+from sklearn import preprocessing
 
 
 def show_z_flow(viz, time_step=15):
@@ -299,7 +299,7 @@ def show_vqvae_feature_map(viz):
                         'r') as zef:
                     ze = zef['latent'][:]
                     with h5py.File(
-                            "/data1/home/guangjie/Data/vim2/rec_by_ze_of_vqvae_fmap/subject1/rt/subject_1_rt_roi_v1lhv1rhv2lhv2rhv3alhv3arhv3blhv3brhv3lhv3rhv4lhv4rh_rec_wd_0.03_normalizedFmap_no_mm_18x18_blur3_nolinearConv_Adam_bn_inverse_32x32.hdf5",
+                            "/data1/home/guangjie/Data/vim2/rec_by_k_of_vqvae/subject_1_rt_roi_v1lhv1rhv2lhv2rhv3alhv3arhv3blhv3brhv3lhv3rhv4lhv4rh_wd_0.03_normalizedFmap_no_mm_18x18_blur3_nolinearConv_Adam_bn_inverse_32x32_weighted_k_rec.hdf5",
                             'r') as recf:
                         rec = recf['rec'][:] / 255.0
                         with h5py.File(
@@ -312,7 +312,7 @@ def show_vqvae_feature_map(viz):
                             ze_win = viz.images(np.random.randn(128, 1, 32, 32))
                             for i, (_stim, _dec, _rec, _k, _oze, _ze) in enumerate(
                                     zip(stimTrn, dec, rec, k, ori_ze, ze)):
-                                if i < 6999: continue
+                                # if i < 6999: continue
                                 # _stim = ((_stim + 0.5) * 255).astype(np.uint8)
                                 _stim = np.clip((_stim - np.min(_stim)) / np.max(_stim - np.min(_stim)), 0, 1)
                                 _stim = np.repeat(_stim[:, :, np.newaxis], 3, axis=-1)
@@ -339,32 +339,45 @@ def show_vqvae_feature_map(viz):
 
 
 def vim2_show_vqvae_feature_map(viz):
-    with h5py.File("/data1/home/guangjie/Data/vim2/extract_from_vqvae/k_from_vqvae_st_frame_1.hdf5",
-                   'r') as kf:
-        k = kf['k'][:].astype(np.uint64)
+    scaler = preprocessing.MinMaxScaler()
+    with h5py.File("/data1/home/guangjie/Data/vim-2-gallant/orig/Stimuli.mat", 'r') as stf:
+        st = stf['sv']
         with h5py.File(
-                "/data1/home/guangjie/Data/vim2/regressed_feature_map/subject_1/rt/subject_1_rt_roi_v1lhv1rhv2lhv2rhv3alhv3arhv3blhv3brhv3lhv3rhv4lhv4rh_regressed_fmap_all_wd_0.03_normalizedFmap_no_mm_18x18_blur3_nolinearConv_Adam_bn_inverse_32x32.hdf5",
-                'r') as zef:
-            ze = zef['latent'][:]
-            with h5py.File(
-                    "/data1/home/guangjie/Data/vim-2-gallant/myOrig/imagenet128_embeds_from_vqvae.hdf5",
-                    'r') as ef:
-                embeds = ef['embeds'][:]
+                "/data1/home/guangjie/Data/vim2/rec_by_k_of_vqvae/subject_1_rt_roi_v1lhv1rhv2lhv2rhv3alhv3arhv3blhv3brhv3lhv3rhv4lhv4rh_wd_0.03_normalizedFmap_no_mm_18x18_blur3_nolinearConv_Adam_bn_inverse_32x32_weighted_k_rec.hdf5",
+                'r') as recf:
+            rec = recf['rec']
+            with h5py.File("/data1/home/guangjie/Data/vim2/extract_from_vqvae/k_from_vqvae_st_frame_1.hdf5", 'r') as kf:
+                k = kf['k'][:].astype(np.uint64)
+                with h5py.File(
+                        "/data1/home/guangjie/Data/vim2/regressed_feature_map/subject_1/rt/subject_1_rt_roi_v1lhv1rhv2lhv2rhv3alhv3arhv3blhv3brhv3lhv3rhv4lhv4rh_regressed_fmap_all_wd_0.015_normalizedFmap_mm_mm_18x18_blur5_conv_64_32_mask.hdf5",
+                        'r') as zef:
+                    ze = zef['latent'][:]
+                    with h5py.File(
+                            "/data1/home/guangjie/Data/vim-2-gallant/myOrig/imagenet128_embeds_from_vqvae.hdf5",
+                            'r') as ef:
+                        embeds = ef['embeds'][:]
+                        ori_rec_win = viz.images(np.random.randn(2, 3, 128, 128))
+                        fmap_win = viz.images(np.random.randn(128, 1, 32, 32))
+                        ze_win = viz.images(np.random.randn(128, 1, 18, 18))
+                        for i in np.arange(0, 7200):
+                            _st = st[i * 15].transpose((0, 2, 1))
+                            _rec = rec[i].transpose((2, 0, 1))
+                            _k = k[i]
+                            _ze = ze[i]
+                            fmap = embeds[_k].reshape(1024, 128)
+                            fmap = scaler.fit_transform(fmap).reshape(32, 32, 128).transpose((2, 0, 1))
+                            fmap = fmap[:, np.newaxis, :, :]  # embeds[_k].transpose((2, 0, 1))
+                            fmap = np.clip(fmap, 0, 1)
+                            # fmap = np.clip((fmap - np.min(fmap)) / np.max(fmap - np.min(fmap)), 0, 1)
 
-                fmap_win = viz.images(np.random.randn(128, 1, 32, 32))
-                ze_win = viz.images(np.random.randn(128, 1, 32, 32))
-                for i in np.arange(0, 7200):
-                    _k = k[i]
-                    _ze = ze[i]
-                    fmap = embeds[_k].transpose((2, 0, 1))[:, np.newaxis, :, :]
-                    fmap = np.clip((fmap - np.min(fmap)) / np.max(fmap - np.min(fmap)), 0, 1)
-
-                    _ze = _ze.transpose((2, 0, 1))[:, np.newaxis, :, :]  # / np.max(_ze)
-                    _ze = np.clip((_ze - np.min(_ze)) / np.max(_ze - np.min(_ze)), 0, 1)
-
-                    viz.images(fmap, win=fmap_win)
-                    viz.images(_ze, win=ze_win)
-                    print(i)
+                            _ze = scaler.fit_transform(_ze.reshape(324, 128)).reshape(18, 18, 128)
+                            _ze = _ze.transpose((2, 0, 1))[:, np.newaxis, :, :]  # / np.max(_ze)
+                            _ze = np.clip(_ze, 0, 1)
+                            # _ze = np.clip((_ze - np.min(_ze)) / np.max(_ze - np.min(_ze)), 0, 1)
+                            viz.images([_st, _rec], win=ori_rec_win)
+                            viz.images(fmap, win=fmap_win)
+                            viz.images(_ze, win=ze_win)
+                            print(i)
 
 
 def show_normlized_zq(viz):

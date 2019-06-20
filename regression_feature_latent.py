@@ -536,10 +536,10 @@ if __name__ == '__main__':
     latent_end = 1024
     # with open("testlosslog/for_latent/test_loss_{}_{}_wd_{}.json".format(latent_start, latent_end, weight_decay),
     #           'w') as fp:
-    # test_loss = train_all_frame(viz=viz, frame_start=1, frame_end=2, latence_start=latent_start,
-    #                             latence_end=latent_end, lr=lr, weight_decay=weight_decay, init_weights=init_weights,
-    #                             epochs=epochs, logIterval=logIterval, drawline=False, batch_size=128, num_workers=0,
-    #                             i_dim=i_dim, o_dim=o_dim, subject=3)
+    test_loss = train_all_frame(viz=viz, frame_start=1, frame_end=2, latence_start=latent_start,
+                                latence_end=latent_end, lr=lr, weight_decay=weight_decay, init_weights=init_weights,
+                                epochs=epochs, logIterval=logIterval, drawline=False, batch_size=128, num_workers=0,
+                                i_dim=i_dim, o_dim=o_dim, subject=3)
     ##########################
     # model = WeightRegressionModel(128,
     #                               "/data1/home/guangjie/Data/vim-2-gallant/myOrig/imagenet128_embeds_from_vqvae.hdf5").cuda()

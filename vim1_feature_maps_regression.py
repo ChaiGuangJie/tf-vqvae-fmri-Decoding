@@ -12,6 +12,7 @@ import scipy.io as sio
 import cv2
 # import torch.functional as F
 import torch.nn.functional as F
+from sklearn import preprocessing
 
 os.environ["CUDA_VISIBLE_DEVICES"] = "3"
 
@@ -276,13 +277,12 @@ def test(viz, model, test_dataloader, test_win_mse, criterion, test_global_idx):
 
 
 def train_pipline(viz, fmri_key, init_weights, epochs, lr, weight_decay, logIterval, drawline, rois, split_point,
-                  fmap_start, fmap_end, batch_size, num_workers, i_dim, o_dim, subject, normalize, saveModel):
-    # model = LinearRegressionModel(i_dim, o_dim).cuda()
+                  fmap_start, fmap_end, batch_size, num_workers, i_dim, o_dim, subject, normalize, saveModel,
+                  showRegressedFmap, stIdx):
     # model = NonLinearRegressionModel(i_dim, o_dim).cuda()
-    model = LinearConvRegresssionModel(i_dim, o_dim).cuda()
-    criterion = Vim1_MSE()
+    # model = LinearConvRegresssionModel(i_dim, o_dim).cuda()
+    criterion =nn.MSELoss() # Vim1_MSE()
     # nn.MSELoss()  # Mean Squared Loss
-    optimiser = torch.optim.SGD(model.parameters(), lr=lr, weight_decay=weight_decay)  # Stochastic Gradient Descent
     # optimiser = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
     # optimiser = torch.optim.RMSprop(model.parameters(), lr=lr, weight_decay=weight_decay)
     saveDir = '/data1/home/guangjie/Data/vim1/regressionFeatureMapModelNormalizedFmap/subject_{}/{}_{}_18x18_Adam_bn'.format(
@@ -290,6 +290,9 @@ def train_pipline(viz, fmri_key, init_weights, epochs, lr, weight_decay, logIter
     os.makedirs(saveDir, exist_ok=True)
     test_loss_of_frame = []
     for fmap_idx in np.arange(fmap_start, fmap_end):  # range(n_lantent):
+        model = LinearRegressionModel(i_dim, o_dim).cuda()
+        optimiser = torch.optim.SGD(model.parameters(), lr=lr, weight_decay=weight_decay)  # Stochastic Gradient Descent
+
         # model = LinearConvRegresssionModel(i_dim, o_dim).cuda()
         # model.apply(init_weights)
         # dataset = vim1_fmri_k_dataset(fmri_file="/data1/home/guangjie/Data/vim-1/EstimatedResponses.mat",
@@ -357,6 +360,21 @@ def train_pipline(viz, fmri_key, init_weights, epochs, lr, weight_decay, logIter
             torch.save(model.state_dict(),
                        os.path.join(saveDir, "subject_{}_regression_model_roi_{}_i_{}_o_{}_fmap_{}.pth".format(
                            subject, ''.join(map(str, rois)), i_dim, o_dim, fmap_idx)))
+        if showRegressedFmap:
+            dataset = vim1_fmri_fmap_dataset(fmri_file="/data1/home/guangjie/Data/vim-1/EstimatedResponses.mat",
+                                             voxel_select_file="/data1/home/guangjie/Project/python/tf-vqvae/vim1_subject_{}_roi_{}_voxel_select.json".format(
+                                                 subject, ''.join(map(str, rois))),
+                                             latent_file="/data1/home/guangjie/Data/vim1/exprimentData/extract_from_vqvae/zq_of_st_fmap_mm_scaler_18x18_blur5.hdf5",
+                                             fmri_key=fmri_key, fmap_idx=fmap_idx, isTrain=False, rois=rois,
+                                             split_point=0, subject=subject, normalize=normalize)
+            for i in stIdx:
+                scaler = preprocessing.MinMaxScaler()
+                fmri, fmap = dataset[i]
+                predict_fmap = model(torch.as_tensor(fmri).cuda()).squeeze()
+                predict_fmap = np.clip(scaler.fit_transform(predict_fmap.cpu().detach().numpy()[:, np.newaxis]), 0,
+                                       1).reshape((1, 1, 18, 18))
+                fmap = np.clip(scaler.fit_transform(fmap[:, np.newaxis]), 0, 1).reshape((1, 1, 18, 18))
+                viz.images(np.concatenate([fmap, predict_fmap], axis=0))
     return test_loss_of_frame
 
 
@@ -506,27 +524,27 @@ if __name__ == '__main__':
     torch.manual_seed(7)
 
     lr = 0.02  # 0.00006  # best:0.001
-    weight_decay = 0.00001  # 1  # 0.03  # best:0.01 todo 调整此参数，改变test loss 随train loss 下降的程度
-    epochs = 180  # best:200 50
+    weight_decay = 0.1  # 1  # 0.03  # best:0.01 todo 调整此参数，改变test loss 随train loss 下降的程度
+    epochs = 250  # best:200 50
     logIterval = 30
     subject = 1
     i_dim = 1535  # 2333#928  # 1535  # 5965# 3377 #  # 7500  # 5965  # 2084  # 7500#5965  # 3377  # 1294  # 3377# 2588  # 5965  # 1789#1789#2084 #2588  #
     # 1294  # 4321  #   6310  # 2771  # 3539  # 893  # 4854 frame_0:4917 4917  #4828  #Subject3V12:2471    Subject3V34:2383 subject3ips:893
-    o_dim = 324#225  # 324  # 529  # 23*23 400  #
+    o_dim = 324  # 225  # 324  # 529  # 23*23 400  #
     n_frames = 15
     # todo frame_1 Adam w_d 0.1
     # show_regression_performance_all()
     # for i in range(1024):
     # show_regression_performance(model_in_dim=i_dim, model_out_dim=o_dim, frame_idx=0, latent_idx=0)
     frame_idx = 1
-    fmap_start = 0
-    fmap_end = 128
+    fmap_start = 23
+    fmap_end = 24
     # with open("testlosslog/for_feature_map/test_loss_{}_{}_wd_{}.json".format(fmap_start, fmap_end, weight_decay),
     #           'w') as fp:
     lossdict = train_pipline(viz, 'dataTrnS1', init_weights, epochs, lr, weight_decay, logIterval, drawline=True,
                              rois=[6], split_point=1700, fmap_start=fmap_start, fmap_end=fmap_end,
                              batch_size=128, num_workers=0, i_dim=i_dim, o_dim=o_dim, subject=1, normalize=False,
-                             saveModel=False)
+                             saveModel=False, showRegressedFmap=True, stIdx=[0, 1701])
     # apply_regression_to_fmri_concatenate(dt_key='dataTrnS1', rois=[6], subject=1, n_fmap=128,
     #                                      model_in_dim=i_dim, model_out_dim=o_dim, wd=weight_decay, normalize=False,
     #                                      postfix='no_mm_18x18_blur3_nolinearConv_Adam_bn_res_32x32')

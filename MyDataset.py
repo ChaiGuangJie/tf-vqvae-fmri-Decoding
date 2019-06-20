@@ -710,7 +710,7 @@ class vim2_fmri_fmap_dataset(Dataset):
         # self.scaler = preprocessing.Normalizer()
         if normalize:
             all_resp = self.scaler.fit_transform(
-                np.nan_to_num(voxelf[fmri_key][idxAll, :][select_idx, :]))  # .transpose()
+                np.nan_to_num(voxelf[fmri_key][idxAll, :][select_idx, :]))#.transpose()  #.transpose()
         else:
             all_resp = np.nan_to_num(voxelf[fmri_key][idxAll, :][select_idx, :])
 
