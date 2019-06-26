@@ -154,11 +154,20 @@ def extract_vim2_voxel():
     print('end')
 
 
-def get_vim1_roi_idx(roi_key, voxel_file):
+# def get_vim1_roi_idx(roi_key, voxel_file):
+#     with h5py.File(voxel_file, 'r') as vrf:
+#         roi = vrf[roi_key][:].flatten()
+#         idxAll = []
+#         for i in [1, 2, 3, 4, 5, 6]:
+#             idx = np.where(roi == i)[0]
+#             idxAll = np.concatenate([idxAll, idx])
+#         idxAll = np.sort(idxAll).astype(np.uint64)
+#         return idxAll
+def get_vim1_roi_idx(voxel_file, roi_key, roi_nums):
     with h5py.File(voxel_file, 'r') as vrf:
         roi = vrf[roi_key][:].flatten()
         idxAll = []
-        for i in [1, 2, 3, 4, 5, 6]:
+        for i in roi_nums:
             idx = np.where(roi == i)[0]
             idxAll = np.concatenate([idxAll, idx])
         idxAll = np.sort(idxAll).astype(np.uint64)
@@ -307,9 +316,9 @@ def vim1_create_normlized_zq(dt_key):
         with h5py.File("/data1/home/guangjie/Data/vim-2-gallant/myOrig/imagenet128_embeds_from_vqvae.hdf5", 'r') as ef:
             embeds = ef['embeds'][:]
             with h5py.File(
-                    "/data1/home/guangjie/Data/vim1/exprimentData/extract_from_vqvae/zq_of_{}_fmap_mm_scaler_18x18_blur5.hdf5".format(
+                    "/data1/home/guangjie/Data/vim1/exprimentData/extract_from_vqvae/zq_of_{}_fmap_mm_scaler_15x15_blur5.hdf5".format(
                         dt_key), 'w') as zqf:
-                latent = zqf.create_dataset('latent', shape=(len(k), 18, 18, 128))
+                latent = zqf.create_dataset('latent', shape=(len(k), 15, 15, 128))
                 for i, _k in enumerate(k):
                     fmap = embeds[_k].reshape(1024, 128)  # .transpose()
                     fmap = scaler.fit_transform(fmap).reshape(32, 32, 128)  # .transpose()
@@ -321,8 +330,9 @@ def vim1_create_normlized_zq(dt_key):
                         fm = fmap[:, :, j]
                         # norm_fm = np.clip((fm - np.min(fm)) / np.max(fm - np.min(fm)), 0, 1)
                         # fmap[:, :, j] = scaler.fit_transform(fm)
-                        blur_fm = cv2.GaussianBlur(fm, (5, 5), 0)
-                        small_blur_fm = cv2.resize(blur_fm, (18, 18))
+                        small_fm = cv2.resize(fm, (15, 15))
+                        small_blur_fm = cv2.GaussianBlur(small_fm, (5, 5), 0)
+
                         # small_blur_fm = cv2.GaussianBlur(small_fm, (3, 3), 0)
                         # laplacian = cv2.Laplacian(small_blur_fm, -1)
                         latent[i, :, :, j] = small_blur_fm  # blur_small_fm
@@ -353,12 +363,12 @@ def vim2_create_normlized_zq(dt_key):
         with h5py.File("/data1/home/guangjie/Data/vim-2-gallant/myOrig/imagenet128_embeds_from_vqvae.hdf5", 'r') as ef:
             embeds = ef['embeds'][:]
             with h5py.File(
-                    "/data1/home/guangjie/Data/vim2/exprimentData/zq_of_{}_fmap_mm_scaler_18x18_blur9_T.hdf5".format(
+                    "/data1/home/guangjie/Data/vim2/exprimentData/zq_of_{}_fmap_mm_scaler_12x12_blur9.hdf5".format(
                         dt_key), 'w') as zqf:
-                latent = zqf.create_dataset('latent', shape=(len(k), 18, 18, 128))
+                latent = zqf.create_dataset('latent', shape=(len(k), 12, 12, 128))
                 for i, _k in enumerate(k):
-                    fmap = embeds[_k].reshape(1024, 128).transpose()
-                    fmap = scaler.fit_transform(fmap).transpose().reshape(32, 32, 128)  #
+                    fmap = embeds[_k].reshape(1024, 128)  # .transpose()
+                    fmap = scaler.fit_transform(fmap).reshape(32, 32, 128)  # .transpose()
                     # normlized_fmap = np.clip((fmap - np.min(fmap)) / np.max(fmap - np.min(fmap)), 0, 1)
                     # normlized_fmap = fmap - np.mean(fmap)
                     # ori = cv2.resize(fmap[:, :, 0], (16, 16))
@@ -368,14 +378,14 @@ def vim2_create_normlized_zq(dt_key):
                         # norm_fm = np.clip((fm - np.min(fm)) / np.max(fm - np.min(fm)), 0, 1)
                         # fmap[:, :, j] = scaler.fit_transform(fm)
                         blur_fm = cv2.GaussianBlur(fm, (9, 9), 0)
-                        small_blur_fm = cv2.resize(blur_fm, (18, 18))
+                        small_blur_fm = cv2.resize(blur_fm, (12, 12))
                         # small_blur_fm = cv2.GaussianBlur(small_fm, (3, 3), 0)
                         # laplacian = cv2.Laplacian(small_blur_fm, -1)
                         latent[i, :, :, j] = small_blur_fm  # blur_small_fm
                         # norm_blur_fm = np.clip((blur_fm - np.min(blur_fm)) / np.max(blur_fm - np.min(blur_fm)), 0, 1)
-                        # grid = np.concatenate((small_blur_fm, laplacian), axis=1)
-                        #
-                        # cv2.imshow('img', blur_fm)
+                        # grid = np.concatenate((cv2.resize(fm, (12, 12)), small_blur_fm), axis=1)
+                        # #
+                        # cv2.imshow('img', grid)
                         # cv2.waitKey(1)
                         # print('img')
                     # fmap = fmap.reshape(256, 128)  # .transpose()
@@ -386,6 +396,49 @@ def vim2_create_normlized_zq(dt_key):
                     # print('img')
                     # latent[i] = fmap
                     print(i)
+
+
+def vim2_create_normlized_zq_fmap(dt_key, fmap_idx):
+    scaler = preprocessing.MinMaxScaler()
+    # scaler = preprocessing.StandardScaler()
+    # scaler = preprocessing.Normalizer()
+    with h5py.File(
+            "/data1/home/guangjie/Data/vim-2-gallant/myOrig/k_from_vqvae_st.hdf5".format(dt_key),
+            'r') as kf:
+        k = kf['k'][:].astype(np.uint64)
+        with h5py.File("/data1/home/guangjie/Data/vim-2-gallant/myOrig/imagenet128_embeds_from_vqvae.hdf5", 'r') as ef:
+            embeds = ef['embeds'][:]
+            for fm_idx in np.arange(fmap_idx, fmap_idx + 1):  # range(128):
+                with h5py.File(
+                        "/data1/home/guangjie/Data/vim2/exprimentData/zq_of_{}_fmap_{}_mm_scaler_18x18_Bilateral.hdf5".format(
+                            dt_key, fm_idx), 'w') as zqf:
+                    latent = zqf.create_dataset('latent', shape=(len(k), 18, 18))
+                    for i, _k in enumerate(k):
+                        # if i < 380: continue
+                        fmap = embeds[_k][:, :, fmap_idx].reshape(1024, 1)  # .transpose()
+                        fmap = scaler.fit_transform(fmap).reshape(32, 32)  # .transpose().
+                        # normlized_fmap = np.clip((fmap - np.min(fmap)) / np.max(fmap - np.min(fmap)), 0, 1)
+                        # normlized_fmap = fmap - np.mean(fmap)
+                        # ori = cv2.resize(fmap[:, :, 0], (16, 16))
+                        # ori = np.clip((ori - np.min(ori)) / np.max(ori - np.min(ori)), 0, 1)
+                        # blur_fm = cv2.GaussianBlur(fmap, (15, 15), 0)
+                        # blur_fm = cv2.bilateralFilter(fmap,9,)
+                        # laplace_fm = cv2.Laplacian(blur_fm, -1, ksize=5)  # -1表示采用的是与原图像相同的深度
+                        small_blur_fm = cv2.resize(fmap, (18, 18))
+                        latent[i, :, :] = small_blur_fm  # blur_small_fm
+                        #
+                        # cv2.imshow('img', blur_fm)
+                        # cv2.waitKey(1)
+                        # print('img')
+                        # fmap = fmap.reshape(256, 128)  # .transpose()
+                        # fmap = scaler.fit_transform(fmap).reshape(16, 16, 128)  # .transpose()
+                        # grid = np.concatenate((ori, fmap[:, :, 0]), axis=1)
+                        # cv2.imshow('img', blur_fm)
+                        # cv2.waitKey(1)
+                        # print('img')
+                        # latent[i] = fmap
+                        print(i)
+                print(fm_idx)
 
 
 def show_mask():
@@ -421,6 +474,45 @@ def recover_fmaps(dt_key):
                         print(i)
 
 
+def vim1_pca(fmri_file, fmri_key, rois, n_components, subject):
+    from sklearn.decomposition import PCA
+    idxAll = get_vim1_roi_idx(fmri_file, 'roiS{}'.format(subject), rois)
+    voxelf = h5py.File(fmri_file, 'r')
+    select_fp = open("/data1/home/guangjie/Project/python/tf-vqvae/vim1_subject_{}_roi_{}_voxel_select.json".format(
+        subject, ''.join(map(str, rois))), )
+    select_idx = json.load(select_fp)
+    resp = np.nan_to_num(voxelf[fmri_key][:, idxAll][:, select_idx])
+    pca = PCA(n_components, whiten=True)
+    reduced_resp = pca.fit_transform(resp)
+    print(reduced_resp.shape)
+    with h5py.File("/data1/home/guangjie/Data/vim1/exprimentData/pca_whiten_resp_1024.hdf5", 'w') as wf:
+        wf.create_dataset(fmri_key, data=reduced_resp)
+    voxelf.close()
+
+
+def concatenate_vim1_fullres():
+    # with h5py.File("/data1/home/guangjie/Data/vim-1/FullRes/Stimuli_Trn_FullRes.hdf5", 'w') as wf:
+    #     st = wf.create_dataset('st', shape=(1750, 500, 500))
+    #     begin = 0
+    #     for i in range(15):
+    #         with h5py.File("/data1/home/guangjie/Data/vim-1/FullRes/Stimuli_Trn_FullRes_{:0>2d}.mat".format(i + 1),
+    #                        'r') as rf:
+    #             stim = rf['stimTrn'][:].transpose(2, 1, 0)
+    #             # cv2.imshow('img', stim[0])
+    #             # cv2.waitKey(1)
+    #             end = begin + len(stim)
+    #             st[begin:end] = stim
+    #             begin = end
+    #         print(i)
+    with h5py.File("/data1/home/guangjie/Data/vim-1/FullRes/Stimuli_Val_FullRes.mat", 'r') as rf:
+        sv = rf['stimVal'][:].transpose(2, 1, 0)
+        with h5py.File("/data1/home/guangjie/Data/vim-1/FullRes/Stimuli_Val_FullRes.hdf5", 'w') as wf:
+            wf.create_dataset('sv', data=sv)
+            # cv2.imshow('img', sv[0])
+            # cv2.waitKey(1)
+            print('end')
+
+
 if __name__ == '__main__':
     # transform_jpg_to_hdf5_of_purdue_dataset('sv', 'test', 5, frame_idx=0)  # st train 18
     # get_top_k_idx_of_purdue_data(k=5000)
@@ -433,11 +525,14 @@ if __name__ == '__main__':
     # vim1_fmap_select()
     # vim1_use_weighted_norm2_to_find_k(dt_key='dataTrnS1', rois=[1, 2], wd=0.005, threshold=0.003, subject=1)
     # select_valid_voxel(rois=[6, 7], subject=1)
-    # vim2_select_valid_voxel(rois=['v3alh', 'v3arh', 'v3blh', 'v3brh', 'v3lh', 'v3rh', 'v4lh', 'v4rh'], subject=1) #'v3alh', 'v3arh', 'v3blh', 'v3brh', 'v3lh', 'v3rh', 'v4lh', 'v4rh'
+    # vim2_select_valid_voxel(rois=[ 'v1lh', 'v1rh', 'v2lh', 'v2rh','v3alh', 'v3arh', 'v3blh', 'v3brh', 'v3lh', 'v3rh','v4lh', 'v4rh'], subject=2) #'v3alh', 'v3arh', 'v3blh', 'v3brh', 'v3lh', 'v3rh', 'v4lh', 'v4rh'
     # print(len(idx))
     # vim1_stimuli_gaussian_blur()
     # vim1_create_normlized_zq('st')
-    vim2_create_normlized_zq('st')
+    # vim2_create_normlized_zq('st')
     # show_mask()
     # recover_fmaps('st')
+    # vim2_create_normlized_zq_fmap('st', fmap_idx=13)
+    # vim1_pca("/data1/home/guangjie/Data/vim-1/EstimatedResponses.mat", 'dataTrnS1', [1, 2, 3, 4, 5, 6], 1024, subject=1)
+    concatenate_vim1_fullres()
     print('end')

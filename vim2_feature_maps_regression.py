@@ -132,7 +132,7 @@ class LinearRegressionModel(nn.Module):
     def forward(self, x):
         # Here the forward pass is simply a linear function
         out = self.linear(x)
-        return  out#self.activate(out)  # todo  out  #
+        return out  # self.activate(out)  # todo  out  #
 
 
 class NonLinearRegressionModel(nn.Module):
@@ -157,9 +157,9 @@ class NonLinearRegressionModel(nn.Module):
 
     def forward(self, x):
         # Here the forward pass is simply a linear function
-        out = self.linear1(x)#self.activate()
+        out = self.linear1(x)  # self.activate()
         # out = self.linear2(out)#self.activate()
-        out = self.linear3(out)#self.outActivate()
+        out = self.linear3(out)  # self.outActivate()
         # out = self.activate(self.linear3(out))
         # out = self.activate(self.linear3(out))
         # out = self.activate(self.linear4(out))
@@ -194,6 +194,19 @@ class LinearConvRegresssionModel(nn.Module):
         # x = self.bn5(self.pool(F.leaky_relu(self.conv4(x))))
         x = F.sigmoid(self.conv5(x))
         return x.view(-1, self.out_dim)
+
+
+class RNNRegressionModel(nn.Module):
+    def __init__(self, input_dim, output_dim):
+        super().__init__()
+        self.input_dim = input_dim
+        self.output_dim = output_dim
+        self.gru = nn.GRU(input_size=input_dim, hidden_size=output_dim, batch_first=True)
+
+    def forward(self, x):
+        h_0 = torch.randn(x.shape[0], 1, self.output_dim)
+        o = self.gru(x, h_0)
+        return o
 
 
 def init_weights(m):
@@ -277,7 +290,7 @@ def test(viz, model, test_dataloader, test_win_mse, criterion, test_global_idx):
         return mse_mean_loss  # todo
 
 
-def train_pipline(viz, fmri_key, init_weights, epochs, lr, weight_decay, logIterval, drawline, rois, split_point,
+def train_pipline(viz, fmri_key, epochs, lr, weight_decay, logIterval, drawline, rois, split_point,
                   fmap_start, fmap_end, batch_size, num_workers, i_dim, o_dim, subject, normalize, saveModel,
                   showRegressedFmap, stIdx):
     # model = LinearRegressionModel(i_dim, o_dim).cuda()
@@ -288,7 +301,7 @@ def train_pipline(viz, fmri_key, init_weights, epochs, lr, weight_decay, logIter
     # optimiser = torch.optim.SGD(model.parameters(), lr=lr, weight_decay=weight_decay)  # Stochastic Gradient Descent
     # optimiser = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
     # optimiser = torch.optim.RMSprop(model.parameters(), lr=lr, weight_decay=weight_decay)
-    saveDir = '/data1/home/guangjie/Data/vim2/regressionFeatureMapLinearCovModel/subject_{}/{}_{}_18x18_Adam_64_32_SGD'.format(
+    saveDir = '/data1/home/guangjie/Data/vim2/regressionFeatureMapLinearCovModel/subject_{}/{}_{}_18x18_64_32_SGD'.format(
         subject, ''.join(map(str, rois)), str(weight_decay))
     os.makedirs(saveDir, exist_ok=True)
     test_loss_of_frame = []
@@ -309,10 +322,11 @@ def train_pipline(viz, fmri_key, init_weights, epochs, lr, weight_decay, logIter
         #                               fmri_key=fmri_key, fmap_idx=fmap_idx, isTrain=True, rois=rois,
         #                               split_point=split_point, subject=subject, normalize=normalize)
         dataset = vim2_fmri_fmap_dataset(
-            fmri_file="/data1/home/guangjie/Data/vim-2-gallant/orig/VoxelResponses_subject1.mat",
+            fmri_file="/data1/home/guangjie/Data/vim-2-gallant/orig/VoxelResponses_subject{}.mat".format(subject),
             voxel_select_file="/data1/home/guangjie/Project/python/tf-vqvae/vim2_subject_{}_roi_{}_voxel_select.json".format(
                 subject, ''.join(map(str, rois))),
-            latent_file="/data1/home/guangjie/Data/vim2/exprimentData/zq_of_st_fmap_mm_scaler_18x18_blur9.hdf5",
+            latent_file="/data1/home/guangjie/Data/vim2/exprimentData/zq_of_st_fmap_mm_scaler_18x18_blur15.hdf5".format(
+                fmap_idx),
             fmri_key=fmri_key, fmap_idx=fmap_idx, isTrain=True, rois=rois, split_point=split_point, subject=subject,
             normalize=normalize)
 
@@ -326,10 +340,11 @@ def train_pipline(viz, fmri_key, init_weights, epochs, lr, weight_decay, logIter
         #                                    fmri_key=fmri_key, fmap_idx=fmap_idx, isTrain=False, rois=rois,
         #                                    split_point=split_point, subject=subject, normalize=normalize)
         test_dataset = vim2_fmri_fmap_dataset(
-            fmri_file="/data1/home/guangjie/Data/vim-2-gallant/orig/VoxelResponses_subject1.mat",
+            fmri_file="/data1/home/guangjie/Data/vim-2-gallant/orig/VoxelResponses_subject{}.mat".format(subject),
             voxel_select_file="/data1/home/guangjie/Project/python/tf-vqvae/vim2_subject_{}_roi_{}_voxel_select.json".format(
                 subject, ''.join(map(str, rois))),
-            latent_file="/data1/home/guangjie/Data/vim2/exprimentData/zq_of_st_fmap_mm_scaler_18x18_blur9.hdf5",
+            latent_file="/data1/home/guangjie/Data/vim2/exprimentData/zq_of_st_fmap_mm_scaler_18x18_blur15.hdf5".format(
+                fmap_idx),
             fmri_key=fmri_key, fmap_idx=fmap_idx, isTrain=False, rois=rois, split_point=split_point, subject=subject,
             normalize=normalize)
         test_dataloader = DataLoader(test_dataset, batch_size=batch_size, shuffle=True, num_workers=num_workers)
@@ -373,17 +388,20 @@ def train_pipline(viz, fmri_key, init_weights, epochs, lr, weight_decay, logIter
                 fmri_file="/data1/home/guangjie/Data/vim-2-gallant/orig/VoxelResponses_subject1.mat",
                 voxel_select_file="/data1/home/guangjie/Project/python/tf-vqvae/vim2_subject_{}_roi_{}_voxel_select.json".format(
                     subject, ''.join(map(str, rois))),
-                latent_file="/data1/home/guangjie/Data/vim2/exprimentData/zq_of_st_fmap_mm_scaler_18x18_blur9.hdf5",
+                latent_file="/data1/home/guangjie/Data/vim2/exprimentData/zq_of_st_fmap_mm_scaler_18x18_blur15.hdf5",
                 fmri_key=fmri_key, fmap_idx=fmap_idx, isTrain=False, rois=rois, split_point=0, subject=subject,
                 normalize=normalize)
-            for i in stIdx:
+            with torch.no_grad():
                 scaler = preprocessing.MinMaxScaler()
-                fmri, fmap = dataset[i]
-                predict_fmap = model(torch.as_tensor(fmri).cuda()).squeeze()
-                predict_fmap = np.clip(scaler.fit_transform(predict_fmap.cpu().detach().numpy()[:, np.newaxis]), 0,
-                                       1).reshape((1, 1, 18, 18))
-                fmap = np.clip(scaler.fit_transform(fmap[:, np.newaxis]), 0, 1).reshape((1, 1, 18, 18))
-                viz.images(np.concatenate([fmap, predict_fmap], axis=0))
+                fmris, fmaps = dataset[stIdx]
+                predict_fmaps = model(torch.as_tensor(fmris.transpose()).cuda()).squeeze()
+                predict_fmaps = np.clip(
+                    scaler.fit_transform(predict_fmaps.cpu().detach().numpy().transpose()).transpose(), 0, 1).reshape(
+                    (-1, 1, 18, 18))
+                fmaps = np.clip(scaler.fit_transform(fmaps.transpose()).transpose(), 0, 1).reshape((-1, 1, 18, 18))
+                # viz.images(fmaps)
+                # viz.images(predict_fmaps)
+                viz.images(np.concatenate([fmaps, predict_fmaps], axis=0), nrow=fmaps.shape[0])
     return test_loss_of_frame
 
 
@@ -541,12 +559,12 @@ if __name__ == '__main__':
     assert viz.check_connection(timeout_seconds=3)
     torch.manual_seed(7)
 
-    lr = 0.1  # 0.0001  # 0.00006  # best:0.001
-    weight_decay = 0.04  # best:0.01 todo 调整此参数，改变test loss 随train loss 下降的程度
-    epochs = 60  # best:200 50
+    lr = 0.04  # 0.0001  # 0.00006  # best:0.001
+    weight_decay = 0.08  # best:0.01 todo 调整此参数，改变test loss 随train loss 下降的程度
+    epochs = 40  # best:200 50
     logIterval = 30
     subject = 1
-    i_dim = 4854  # 2383  # 2471  # 4854  # 734
+    i_dim = 4854  # 1649 2383  # 2471  # 4854  # 734
     o_dim = 324  # 1024  # 324  # 225  # 324  # 529  # 23*23 400  #
     n_frames = 15
     # todo frame_1 Adam w_d 0.1
@@ -554,15 +572,17 @@ if __name__ == '__main__':
     # for i in range(1024):
     # show_regression_performance(model_in_dim=i_dim, model_out_dim=o_dim, frame_idx=0, latent_idx=0)
     frame_idx = 1
-    fmap_start = 13
-    fmap_end = 14
+    fmap_start = 0
+    fmap_end = 1
     # with open("testlosslog/for_feature_map/test_loss_{}_{}_wd_{}.json".format(fmap_start, fmap_end, weight_decay),
     #           'w') as fp:
-    lossdict = train_pipline(viz, 'rt', init_weights, epochs, lr, weight_decay, logIterval, drawline=True,
-                             rois=['v1lh', 'v1rh', 'v2lh', 'v2rh','v3alh', 'v3arh', 'v3blh', 'v3brh', 'v3lh', 'v3rh','v4lh', 'v4rh'], split_point=7000, fmap_start=fmap_start,
-                             fmap_end=fmap_end,
-                             batch_size=128, num_workers=0, i_dim=i_dim, o_dim=o_dim, subject=1,
-                             normalize=False, saveModel=False, showRegressedFmap=True, stIdx=[100, 7121])
+    lossdict = train_pipline(viz, 'rt', epochs, lr, weight_decay, logIterval, drawline=True,
+                             rois=['v1lh', 'v1rh', 'v2lh', 'v2rh', 'v3alh', 'v3arh', 'v3blh', 'v3brh', 'v3lh', 'v3rh',
+                                   'v4lh', 'v4rh'], split_point=7000, fmap_start=fmap_start,
+                             fmap_end=fmap_end, batch_size=128, num_workers=0, i_dim=i_dim, o_dim=o_dim, subject=1,
+                             normalize=True, saveModel=False, showRegressedFmap=True,
+                             stIdx=[0, 1, 2, 3, 4, 100, 101, 102, 103, 104, 7110, 7111, 7112, 7113, 7114])
+
     # 'v1lh', 'v1rh', 'v2lh', 'v2rh','v3alh', 'v3arh', 'v3blh', 'v3brh', 'v3lh', 'v3rh','v4lh', 'v4rh'
     # apply_regression_to_fmri_concatenate(dt_key='rt',
     #                                      rois=['v1lh', 'v1rh', 'v2lh', 'v2rh', 'v3alh', 'v3arh', 'v3blh', 'v3brh',

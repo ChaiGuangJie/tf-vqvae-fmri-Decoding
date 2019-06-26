@@ -670,6 +670,42 @@ class vim1_fmri_fmap_dataset(Dataset):
         return len(self.latent)
 
 
+class vim1_fmri_pca_fmap_dataset(Dataset):
+    def __init__(self, fmri_file, voxel_select_file, latent_file, fmri_key, fmap_idx, isTrain, rois,
+                 split_point, subject, normalize):
+        voxelf = h5py.File(fmri_file, 'r')
+        latentf = h5py.File(latent_file, 'r')
+        self.scaler = preprocessing.MinMaxScaler()
+        # self.scaler = preprocessing.StandardScaler()
+        # self.scaler = preprocessing.Normalizer()
+        # self.scaler.fit(np.nan_to_num(voxelf[fmri_key][:, idxAll][:, select_idx]).transpose())
+        # .fit(np.nan_to_num(voxelf[fmri_key][:, idxAll][:, select_idx]).transpose())
+        if normalize:
+            all_resp = self.scaler.fit_transform(
+                np.nan_to_num(voxelf[fmri_key]))  # .transpose()
+        else:
+            all_resp = np.nan_to_num(voxelf[fmri_key])
+
+        if isTrain:
+            # self.resp = np.nan_to_num(voxelf[fmri_key][:split_point, idxAll][:, select_idx])
+            self.resp = all_resp[:split_point]
+            self.latent = latentf['latent'][:split_point, :, :, fmap_idx]
+
+        else:
+            self.resp = all_resp[split_point:]
+            # self.resp = np.nan_to_num(voxelf[fmri_key][split_point:, idxAll][:, select_idx])
+            self.latent = latentf['latent'][split_point:, :, :, fmap_idx]
+        self.latent = self.latent.reshape(-1, self.latent.shape[-1] * self.latent.shape[-2])
+
+    def __getitem__(self, item):
+        fmri = self.resp[item].astype(np.float32)
+        fmap = self.latent[item]
+        return fmri, fmap
+
+    def __len__(self):
+        return len(self.latent)
+
+
 def get_vim2_roi_idx(voxel_file, rois):
     with h5py.File(voxel_file, 'r') as vrf:
         roi_group = vrf['roi']
@@ -710,7 +746,7 @@ class vim2_fmri_fmap_dataset(Dataset):
         # self.scaler = preprocessing.Normalizer()
         if normalize:
             all_resp = self.scaler.fit_transform(
-                np.nan_to_num(voxelf[fmri_key][idxAll, :][select_idx, :]))#.transpose()  #.transpose()
+                np.nan_to_num(voxelf[fmri_key][idxAll, :][select_idx, :]))  # .transpose()  #.transpose()
         else:
             all_resp = np.nan_to_num(voxelf[fmri_key][idxAll, :][select_idx, :])
 
@@ -724,13 +760,60 @@ class vim2_fmri_fmap_dataset(Dataset):
             # self.resp = np.nan_to_num(voxelf[fmri_key][split_point:, idxAll][:, select_idx])
             self.latent = latentf['latent'][split_point:, :, :, fmap_idx]
 
+        self.latent = self.latent.reshape(-1, self.latent.shape[-1] * self.latent.shape[-2])
+
     def __getitem__(self, item):
         fmri = self.resp[:, item].astype(np.float32)
-        fmap = self.latent[item].flatten()
+        fmap = self.latent[item]  # .flatten()
         return fmri, fmap
 
     def __len__(self):
         return len(self.latent)
+
+
+class vim2_rnn_fmri_fmap_dataset(Dataset):
+    def __init__(self, fmri_file, voxel_select_file, latent_file, fmri_key, isTrain, rois,
+                 split_point, normalize, fmap_size, time_step=15):
+        self.fmap_size = fmap_size
+        self.time_step = time_step
+        idxAll = get_vim2_roi_idx(fmri_file, rois)
+        voxelf = h5py.File(fmri_file, 'r')
+        select_fp = open(voxel_select_file)
+        select_idx = json.load(select_fp)
+
+        latentf = h5py.File(latent_file, 'r')
+        # self.scaler = preprocessing.MinMaxScaler()
+        self.scaler = preprocessing.StandardScaler()
+        # self.scaler = preprocessing.Normalizer()
+        if normalize:
+            all_resp = self.scaler.fit_transform(
+                np.nan_to_num(voxelf[fmri_key][idxAll, :][select_idx, :]))  # .transpose()  #.transpose()
+        else:
+            all_resp = np.nan_to_num(voxelf[fmri_key][idxAll, :][select_idx, :])
+
+        if isTrain:
+            # self.resp = np.nan_to_num(voxelf[fmri_key][:split_point, idxAll][:, select_idx])
+            self.resp = all_resp[:, :split_point]
+            self.latent = latentf['latent'][:split_point * self.time_step, :, :]
+
+        else:
+            self.resp = all_resp[:, split_point:]
+            # self.resp = np.nan_to_num(voxelf[fmri_key][split_point:, idxAll][:, select_idx])
+            self.latent = latentf['latent'][split_point * self.time_step:]
+
+    def __getitem__(self, item):
+        fmri = self.resp[:, item].astype(np.float32)  # [np.newaxis, :]
+        # supplement = np.ones((self.time_step - 1, self.resp.shape[0]), dtype=np.float32)
+        # fmri = np.append(fmri, supplement, axis=0)
+        fmri = np.repeat([fmri], self.time_step, axis=0)
+        begin = item * self.time_step
+        end = begin + self.time_step
+        fmap = self.latent[begin:end].reshape(self.time_step, self.fmap_size * self.fmap_size)
+        return fmri, fmap
+
+    def __len__(self):
+        return self.resp.shape[-1]
+
 
 # class vim2_val_fmri_dataset(Dataset):
 #     def __init__(self, fmri_file, voxel_select_file, fmri_key, rois, normalize):
@@ -759,12 +842,11 @@ class vim2_fmri_fmap_dataset(Dataset):
 if __name__ == '__main__':
     # dataset = vim1_stimuli_dataset("/data1/home/guangjie/Data/vim-1/Stimuli.mat", 'stimTrn', 3)
     # dataset = vim1_fmri_dataset("/data1/home/guangjie/Data/vim-1/EstimatedResponses.mat", [1, 2], 'dataTrnS1', 1)
-    dataset = vim2_fmri_fmap_dataset(
+    dataset = vim2_rnn_fmri_fmap_dataset(
         fmri_file="/data1/home/guangjie/Data/vim-2-gallant/orig/VoxelResponses_subject1.mat",
         voxel_select_file='/data1/home/guangjie/Project/python/tf-vqvae/vim2_subject_1_roi_v4lhv4rh_voxel_select.json',
-        latent_file="/data1/home/guangjie/Data/vim2/extract_from_vqvae/zq_of_st_fmap_mm_scaler_23x23_blur3.hdf3",
-        fmri_key='rt', fmap_idx=0, isTrain=True, rois=['v4lh', 'v4rh'], split_point=7000, subject=1, normalize=True)
+        latent_file="/data1/home/guangjie/Data/vim2/exprimentData/zq_of_st_fmap_13_mm_scaler_18x18_blur9.hdf5",
+        fmri_key='rt', isTrain=True, rois=['v4lh', 'v4rh'], split_point=7000, normalize=True, fmap_size=18)
     print(len(dataset))
     voxel, fmap = dataset[1]
     print(voxel.shape, fmap.shape)
-    pass

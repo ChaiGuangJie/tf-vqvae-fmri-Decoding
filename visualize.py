@@ -341,27 +341,28 @@ def show_vqvae_feature_map(viz):
 def vim2_show_vqvae_feature_map(viz):
     scaler = preprocessing.MinMaxScaler()
     with h5py.File("/data1/home/guangjie/Data/vim-2-gallant/orig/Stimuli.mat", 'r') as stf:
-        st = stf['sv']
+        st = stf['st']
         with h5py.File(
                 "/data1/home/guangjie/Data/vim2/rec_by_k_of_vqvae/subject_1_rt_roi_v1lhv1rhv2lhv2rhv3alhv3arhv3blhv3brhv3lhv3rhv4lhv4rh_wd_0.03_normalizedFmap_no_mm_18x18_blur3_nolinearConv_Adam_bn_inverse_32x32_weighted_k_rec.hdf5",
                 'r') as recf:
             rec = recf['rec']
-            with h5py.File("/data1/home/guangjie/Data/vim2/extract_from_vqvae/k_from_vqvae_st_frame_1.hdf5", 'r') as kf:
+            with h5py.File("/data1/home/guangjie/Data/vim-2-gallant/myOrig/k_from_vqvae_st.hdf5", 'r') as kf:
                 k = kf['k'][:].astype(np.uint64)
                 with h5py.File(
-                        "/data1/home/guangjie/Data/vim2/regressed_feature_map/subject_1/rt/subject_1_rt_roi_v1lhv1rhv2lhv2rhv3alhv3arhv3blhv3brhv3lhv3rhv4lhv4rh_regressed_fmap_all_wd_0.015_normalizedFmap_mm_mm_18x18_blur5_conv_64_32_mask.hdf5",
+                        "/data1/home/guangjie/Data/vim2/regressed_feature_map/subject_1/rt/subject_1_rt_roi_v1lhv1rhv2lhv2rhv3alhv3arhv3blhv3brhv3lhv3rhv4lhv4rh_regressed_fmap_all_wd_0.45_normalized_fmap_mm_mm_18x18_blur9_rnn.hdf5",
                         'r') as zef:
-                    ze = zef['latent'][:]
+                    ze = zef['latent']
                     with h5py.File(
                             "/data1/home/guangjie/Data/vim-2-gallant/myOrig/imagenet128_embeds_from_vqvae.hdf5",
                             'r') as ef:
                         embeds = ef['embeds'][:]
-                        ori_rec_win = viz.images(np.random.randn(2, 3, 128, 128))
+                        # ori_rec_win = viz.images(np.random.randn(2, 3, 128, 128))
+                        ori_win = viz.image(np.random.randn(3, 128, 128))
                         fmap_win = viz.images(np.random.randn(128, 1, 32, 32))
                         ze_win = viz.images(np.random.randn(128, 1, 18, 18))
-                        for i in np.arange(0, 7200):
-                            _st = st[i * 15].transpose((0, 2, 1))
-                            _rec = rec[i].transpose((2, 0, 1))
+                        for i in np.arange(0, 7200 * 15, 50):
+                            _st = st[i].transpose((0, 2, 1))
+                            # _rec = rec[i].transpose((2, 0, 1))
                             _k = k[i]
                             _ze = ze[i]
                             fmap = embeds[_k].reshape(1024, 128)
@@ -374,7 +375,8 @@ def vim2_show_vqvae_feature_map(viz):
                             _ze = _ze.transpose((2, 0, 1))[:, np.newaxis, :, :]  # / np.max(_ze)
                             _ze = np.clip(_ze, 0, 1)
                             # _ze = np.clip((_ze - np.min(_ze)) / np.max(_ze - np.min(_ze)), 0, 1)
-                            viz.images([_st, _rec], win=ori_rec_win)
+                            # viz.images([_st, _rec], win=ori_rec_win)
+                            viz.image(_st, win=ori_win)
                             viz.images(fmap, win=fmap_win)
                             viz.images(_ze, win=ze_win)
                             print(i)
@@ -389,6 +391,38 @@ def show_normlized_zq(viz):
             fmap = _zq.transpose((2, 0, 1))[:, np.newaxis, :, :]
             viz.images(fmap, win=fmap_win)
             print(i)
+
+
+def vim1_st_presentation_in_experiment(file, dtKey):
+    import cv2
+    mat = sio.loadmat(file)
+    # mat = h5py.File(file, 'r')
+    stim = mat[dtKey][:]
+    for st in stim:
+        st = np.clip((st - np.min(st)) / np.max(st - np.min(st)), 0, 1)
+        large_stim = cv2.resize(st, (500, 500))
+        i = 3
+        while i > 0:
+            cv2.imshow('img', large_stim)
+            cv2.waitKey(200)
+            cv2.imshow('img', np.full((500, 500), 0.5355023))
+            cv2.waitKey(200)
+            i -= 1
+        cv2.waitKey(2800)
+
+
+def vim1_st_preprocess(file, dtKey):
+    import cv2
+    mat = sio.loadmat(file)
+    # mat = h5py.File(file, 'r')
+    stim = mat[dtKey][:]
+    for st in stim:
+        st = np.clip((st - np.min(st)) / np.max(st - np.min(st)), 0, 1)
+        large_stim = cv2.resize(st, (500, 500))
+        filter_stim = cv2.bilateralFilter(large_stim, 50, 100, 100)
+        cv2.imshow('img', filter_stim)
+        cv2.waitKey(200)
+        print(large_stim.shape)
 
 
 if __name__ == '__main__':
@@ -427,9 +461,164 @@ if __name__ == '__main__':
     # )
     # visual_vim1_fmri(viz, rois=[1,2,3], subject=1)
     #############################################
-    vim2_show_vqvae_feature_map(viz)
+    # vim2_show_vqvae_feature_map(viz)
     # show_vqvae_feature_map(viz)
     # show_normlized_zq(viz)
+    # vim1_st_presentation_in_experiment("/data1/home/guangjie/Data/vim-1/Stimuli.mat", 'stimTrn')
+    # vim1_st_preprocess("/data1/home/guangjie/Data/vim-1/Stimuli.mat", 'stimTrn')
+
+    import matplotlib
+    import cv2
+
+    matplotlib.use('TkAgg')
+    from matplotlib import pyplot as plt
+
+
+    class ImageFilter:
+        def __init__(self, fig, file, dtKey, save_file):
+            self.img = None
+            self.i = -1
+            self._RADIUS = 50
+            self._XY = -1
+            self.radius = self._RADIUS
+            self.x = self._XY
+            self.y = self._XY
+            self.gaussian_core = (55, 55)
+            self.sigma_x = 15
+            self.st = h5py.File(file, 'r')
+            self.stim = self.st[dtKey]
+            self.savef = h5py.File(save_file, 'w')
+            # self.saveSt = self.savef.create_dataset(dtKey, shape=(len(self.st), 128, 128), dtype=np.uint8)
+            self.savef.create_dataset('gaussian_core', data=self.gaussian_core)
+            self.savef.create_dataset('sigma_x', data=self.sigma_x)
+            self.saveMask = self.savef.create_dataset('mask', shape=(len(self.stim), 3))  # todo type
+            print(self.saveMask.shape)
+
+            self.fig = fig
+            self.blankImg = np.full((500, 500), 137)  # self.img  #
+            self.pltimg = plt.imshow(self.blankImg, cmap='gray', vmin=0, vmax=255)
+
+            self.bpe_cid = fig.canvas.mpl_connect('button_press_event', self.button_press_event_handle)
+            self.kpe_cid = fig.canvas.mpl_connect('key_press_event', self.key_press_event_handle)
+            plt.show()
+
+        def close(self):
+            self.fig.canvas.mpl_disconnect(self.bpe_cid)
+            self.fig.canvas.mpl_disconnect(self.kpe_cid)
+            self.st.close()
+            self.savef.close()
+            plt.close(self.fig)
+
+        def button_press_event_handle(self, event):
+            print('click', event)
+            if not self.pltimg or event.inaxes != self.pltimg.axes: return
+            print(event.xdata, event.ydata)
+            self.x = event.xdata
+            self.y = event.ydata
+            if self.img is None: return
+            if event.button == 2:
+                img = self.blur_image(self.img, self.radius, (int(self.x), int(self.y)), self.gaussian_core,
+                                      self.sigma_x)
+                self.pltimg.set_data(img)
+                self.fig.canvas.draw()
+            elif event.button == 1:
+                self.radius += 5
+                img = self.blur_image(self.img, self.radius, (int(self.x), int(self.y)), self.gaussian_core,
+                                      self.sigma_x)
+                self.pltimg.set_data(img)
+                self.fig.canvas.draw()
+            elif event.button == 3:
+                self.radius -= 5
+                img = self.blur_image(self.img, self.radius, (int(self.x), int(self.y)), self.gaussian_core,
+                                      self.sigma_x)
+                self.pltimg.set_data(img)
+                self.fig.canvas.draw()
+
+        def key_press_event_handle(self, event):
+            print(event.key)
+            if event.key == 'down':
+                # 先保存当前图片，再显示新图片
+                # todo save img 图片数值的大小范围？
+                if self.i >= 0:
+                    self.saveMask[self.i] = [self.x, self.y, self.radius]
+
+                # 恢复默认参数 大小
+                self.radius = self._RADIUS
+                self.x, self.y = self._XY, self._XY
+                self.i += 1
+                if self.i >= len(self.stim):
+                    print('##############close##################')
+                    self.close()
+                    return
+                img = self.stim[self.i]
+                self.img = np.clip(((img - np.min(img)) / np.max(img - np.min(img))) * 255, 0, 255)
+
+                times = 3
+                while times > 0:
+                    self.pltimg.set_data(self.img)
+                    self.fig.canvas.draw()
+                    plt.pause(0.2)
+                    self.pltimg.set_data(self.blankImg)
+                    self.fig.canvas.draw()
+                    plt.pause(0.2)
+                    times -= 1
+                plt.pause(0.8) #2.8
+                # img = cv2.bilateralFilter(img, 200, 150, 150)
+                img = cv2.GaussianBlur(self.img, self.gaussian_core, self.sigma_x)
+                self.pltimg.set_data(img)  # 展示模糊后的图 点击后清晰
+                self.fig.canvas.draw()
+
+            # elif event.key == 'down' and self.img is not None:
+            #     self.radius -= 5
+            #     img = self.blur_image(self.img, self.radius, (int(self.x), int(self.y)), self.gaussian_core,
+            #                           self.sigma_x)
+            #     self.pltimg.set_data(img)
+            #     self.fig.canvas.draw()
+            # elif event.key == 'up' and self.img is not None:
+            #     self.radius += 5
+            #     img = self.blur_image(self.img, self.radius, (int(self.x), int(self.y)), self.gaussian_core,
+            #                           self.sigma_x)
+            #     self.pltimg.set_data(img)
+            #     self.fig.canvas.draw()
+
+        def blur_image(self, cv_image, radius, center, gaussian_core, sigma_x):
+            blurred = cv2.GaussianBlur(cv_image, gaussian_core, sigma_x)
+
+            circle_not_mask = np.zeros_like(cv_image)
+            cv2.circle(circle_not_mask, center, radius, (255, 255, 255), -1)
+            # Smoothing borders
+            cv2.GaussianBlur(circle_not_mask, (101, 101), 111, dst=circle_not_mask)
+            # cv2.bilateralFilter(circle_not_mask, 200, 150, 150, dst=circle_not_mask) #todo  error src.type() == CV_32FC3
+            # Computing
+            res = self.blend_with_mask_matrix(cv_image, blurred, circle_not_mask)
+            return res
+
+        def blend_with_mask_matrix(self, src1, src2, mask):
+            # res_channels = []
+            # for c in range(0, src1.shape[2]):
+            #     a = src1[:, :, c]
+            #     b = src2[:, :, c]
+            #     m = mask[:, :, c]
+            #     res = cv2.add(
+            #         cv2.multiply(b, cv2.divide(np.full_like(m, 255) - m, 255.0, dtype=cv2.CV_32F), dtype=cv2.CV_32F),
+            #         cv2.multiply(a, cv2.divide(m, 255.0, dtype=cv2.CV_32F), dtype=cv2.CV_32F),
+            #         dtype=cv2.CV_8U)
+            #     res_channels += [res]
+            # res = cv2.merge(res_channels)
+            a = src1
+            b = src2
+            m = mask
+            res = cv2.add(
+                cv2.multiply(b, cv2.divide(np.full_like(m, 255) - m, 255.0, dtype=cv2.CV_32F), dtype=cv2.CV_32F),
+                cv2.multiply(a, cv2.divide(m, 255.0, dtype=cv2.CV_32F), dtype=cv2.CV_32F),
+                dtype=cv2.CV_8U)
+            return res
+
+
+    fig = plt.figure()
+    linebuilder = ImageFilter(fig, file="/data1/home/guangjie/Data/vim-1/FullRes/Stimuli_Trn_FullRes.hdf5", dtKey='st',
+                              save_file="/data1/home/guangjie/Data/vim-1/FullRes/Stimuli_Trn_FullRes_Mask.hdf5")
+
     a = input()
     print('end')
     # viz.close()
